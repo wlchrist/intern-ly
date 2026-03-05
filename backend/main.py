@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Initialize rate limiter (IP-based)
+# Note: LaTeX compilation requires texlive package installed via shell.nix
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="Resume Tailor API")
 app.state.limiter = limiter
