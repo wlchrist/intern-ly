@@ -25,12 +25,9 @@ def truncate_at_word(text: str, max_len: int = 65) -> str:
 
 
 def escape_latex(text: str) -> str:
-    """Escape special LaTeX characters and truncate long text"""
+    """Escape special LaTeX characters WITHOUT truncating"""
     if not text:
         return ""
-    
-    # Truncate at word boundary to prevent overflow
-    text = truncate_at_word(text, max_len=65)
     
     replacements = {
         "_": "\\_",
@@ -47,6 +44,17 @@ def escape_latex(text: str) -> str:
     for char, escaped in replacements.items():
         result = result.replace(char, escaped)
     return result
+
+
+def escape_and_truncate_latex(text: str) -> str:
+    """Escape special LaTeX characters and truncate at word boundary for headings"""
+    if not text:
+        return ""
+    
+    # Truncate at word boundary to prevent overflow in headings
+    text = truncate_at_word(text, max_len=65)
+    
+    return escape_latex(text)
 
 
 def build_resume_latex(resume: ResumeJSON) -> str:
@@ -164,8 +172,8 @@ def build_resume_latex(resume: ResumeJSON) -> str:
 """
         for entry in resume.sections.education:
             latex += f"""    \\resumeSubheading
-      {{{escape_latex(entry.title)}}}{{{escape_latex(entry.location)}}}
-      {{{escape_latex(entry.institution)}}}{{{escape_latex(entry.dates)}}}
+      {{{escape_and_truncate_latex(entry.title)}}}{{{escape_and_truncate_latex(entry.location)}}}
+      {{{escape_and_truncate_latex(entry.institution)}}}{{{escape_latex(entry.dates)}}}
 """
             if entry.highlights:
                 latex += "      \\resumeItemListStart\n"
@@ -182,14 +190,14 @@ def build_resume_latex(resume: ResumeJSON) -> str:
 """
         for entry in resume.sections.experience:
             latex += f"""\\resumeSubheading
-{{{escape_latex(entry.title)}}}{{{escape_latex(entry.dates)}}}
-{{{escape_latex(entry.company)}}}{{{escape_latex(entry.location)}}}
+{{{escape_and_truncate_latex(entry.title)}}}{{{escape_latex(entry.dates)}}}
+{{{escape_and_truncate_latex(entry.company)}}}{{{escape_and_truncate_latex(entry.location)}}}
 """
             if entry.highlights:
-                latex += "\\resumeItemListStart\n"
+                latex += "  \\resumeItemListStart\n"
                 for highlight in entry.highlights:
-                    latex += f"\\resumeItem{{{escape_latex(highlight)}}}\n"
-                latex += "\\resumeItemListEnd\n"
+                    latex += f"    \\resumeItem{{{escape_latex(highlight)}}}\n"
+                latex += "  \\resumeItemListEnd\n\n"
         latex += "  \\resumeSubHeadingListEnd\n\n"
     
     # Projects section
@@ -200,7 +208,7 @@ def build_resume_latex(resume: ResumeJSON) -> str:
 """
         for entry in resume.sections.projects:
             # Just use dates for the second parameter, tech stack goes in bullets via rewrite
-            latex += f"  \\resumeSubheadingSimple{{{escape_latex(entry.title)}}}{{{escape_latex(entry.dates)}}}\n"
+            latex += f"  \\resumeSubheadingSimple{{{escape_and_truncate_latex(entry.title)}}}{{{escape_latex(entry.dates)}}}\n"
             if entry.highlights:
                 latex += "  \\resumeItemListStart\n"
                 for highlight in entry.highlights:
