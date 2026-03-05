@@ -1,0 +1,14 @@
+[build]
+providers = ["python"]
+
+[build.python]
+version = "3.11"
+
+[[build.nixpacks.pkgs]]
+pkg = "texlive"
+
+[[build.nixpacks.pkgs]]
+pkg = "gcc"
+
+[start]
+cmd = "python main.py"
