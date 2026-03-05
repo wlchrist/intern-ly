@@ -2,4 +2,4 @@
 nixPkgs = ["texlive.combined.scheme-basic"]
 
 [start]
-cmd = "cd backend && python main.py"
+cmd = "cd backend && python3 -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
