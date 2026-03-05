@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -7,7 +8,11 @@ from pydantic import BaseModel
 import httpx
 import json
 import os
+from io import BytesIO
+import re
 from dotenv import load_dotenv
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 load_dotenv()
 
@@ -498,8 +503,6 @@ def parse_extracted_resume(text: str) -> dict:
 
 
 def extract_fallback_name(content: str) -> str:
-    import re
-
     latex_name_match = re.search(r'\\scshape\s+([^\\]+)', content)
     if latex_name_match:
         return latex_name_match.group(1).strip()
@@ -510,6 +513,153 @@ def extract_fallback_name(content: str) -> str:
             return line
 
     return "Your Name"
+
+
+def parse_markdown_sections(markdown_text: str) -> dict:
+    sections: dict[str, list[str]] = {
+        "education": [],
+        "experience": [],
+        "projects": [],
+        "technical_skills": [],
+    }
+
+    current_section: str | None = None
+
+    for raw_line in markdown_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        header = line.lstrip("#").strip().lower()
+        if header == "education":
+            current_section = "education"
+            continue
+        if header == "experience":
+            current_section = "experience"
+            continue
+        if header == "projects":
+            current_section = "projects"
+            continue
+        if header in ("technical skills", "skills"):
+            current_section = "technical_skills"
+            continue
+
+        if current_section is None:
+            continue
+
+        normalized = re.sub(r"^[-*]\s+", "", line)
+        if normalized:
+            sections[current_section].append(normalized)
+
+    return sections
+
+
+def extract_contact_info(resume_content: str) -> dict:
+    email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", resume_content)
+    phone_match = re.search(r"(?:\+?\d[\d\-\s().]{7,}\d)", resume_content)
+    linkedin_match = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com/[A-Za-z0-9_\-./]+", resume_content)
+    github_match = re.search(r"(?:https?://)?(?:www\.)?github\.com/[A-Za-z0-9_\-./]+", resume_content)
+
+    return {
+        "name": extract_fallback_name(resume_content),
+        "email": email_match.group(0) if email_match else "",
+        "phone": phone_match.group(0) if phone_match else "",
+        "linkedin": linkedin_match.group(0) if linkedin_match else "",
+        "github": github_match.group(0) if github_match else "",
+    }
+
+
+def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    left_margin = 44
+    right_margin = width - 44
+    y = height - 56
+
+    def ensure_space(height_needed: float = 16):
+        nonlocal y
+        if y - height_needed < 50:
+            pdf.showPage()
+            y = height - 56
+
+    def draw_section_heading(text: str):
+        nonlocal y
+        ensure_space(24)
+        pdf.setFont("Times-Bold", 13)
+        pdf.drawString(left_margin, y, text.upper())
+        y -= 4
+        pdf.line(left_margin, y, right_margin, y)
+        y -= 18
+
+    def draw_wrapped_line(text: str, bullet: bool = False):
+        nonlocal y
+        font_name = "Times-Roman"
+        font_size = 12
+        indent = 12 if bullet else 0
+        prefix = "• " if bullet else ""
+        target_width = right_margin - (left_margin + indent)
+
+        words = (prefix + text).split()
+        if not words:
+            return
+
+        current = words[0]
+        lines: list[str] = []
+        pdf.setFont(font_name, font_size)
+
+        for word in words[1:]:
+            candidate = f"{current} {word}"
+            if pdf.stringWidth(candidate, font_name, font_size) <= target_width:
+                current = candidate
+            else:
+                lines.append(current)
+                current = word
+        lines.append(current)
+
+        for line in lines:
+            ensure_space(14)
+            pdf.setFont(font_name, font_size)
+            pdf.drawString(left_margin + indent, y, line)
+            y -= 14
+
+    pdf.setTitle("tailored_resume")
+    pdf.setFont("Times-Bold", 30)
+    pdf.drawCentredString(width / 2, y, contact.get("name") or "Your Name")
+    y -= 24
+
+    contact_bits = [
+        contact.get("phone", ""),
+        contact.get("email", ""),
+        contact.get("linkedin", ""),
+        contact.get("github", ""),
+    ]
+    contact_text = " | ".join([item for item in contact_bits if item])
+    if contact_text:
+        pdf.setFont("Times-Roman", 11)
+        pdf.drawCentredString(width / 2, y, contact_text)
+        y -= 22
+
+    ordered_sections = [
+        ("Education", "education"),
+        ("Experience", "experience"),
+        ("Projects", "projects"),
+        ("Technical Skills", "technical_skills"),
+    ]
+
+    for title, key in ordered_sections:
+        lines = sections.get(key, [])
+        if not lines:
+            continue
+
+        draw_section_heading(title)
+        for item in lines:
+            draw_wrapped_line(item, bullet=True)
+        y -= 4
+
+    pdf.save()
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 async def call_anthropic(prompt: str, temperature: float, max_tokens: int) -> str:
@@ -606,7 +756,7 @@ DRAFT TO REWRITE:
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
-@app.post("/api/tailor", response_model=TailorResponse)
+@app.post("/api/tailor")
 @limiter.limit("10/minute")
 async def tailor_resume(request: Request, data: TailorRequest):
     resume_content = (data.master_resume or data.master_latex or "").strip()
@@ -616,130 +766,55 @@ async def tailor_resume(request: Request, data: TailorRequest):
     if not data.job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
-    prompt = f"""Extract ALL resume sections. Output ONLY in this format:
+    prompt = f"""You are an expert resume editor.
 
-NAME: Full name
-EMAIL: email address
-PHONE: phone number
-LINKEDIN: linkedin URL
-GITHUB: github URL
+TASK:
+1) Parse the resume content below (any format: LaTeX/plain text/markdown).
+2) Rewrite cleartext and bullets to be highly relevant to the job description.
+3) Keep facts strictly true to source (no fabricated employers, dates, tools, or metrics).
+4) Return ONLY markdown with these exact Jake template section headers:
 
-EDUCATION:
-School: university name
-Location: city, state
-Degree: degree name
-Dates: date range
+## Education
+- one bullet per education entry
 
-EXPERIENCE:
-Role: job title
-Company: company name
-Location: city, state
-Dates: date range
-- bullet point 1
-- bullet point 2
-- bullet point 3
+## Experience
+- one bullet per role/title line
+- optional bullet lines under each role for accomplishments
 
-PROJECT:
-Name: project name
-Tech: technology stack
-Dates: dates
-- description 1
-- description 2
+## Projects
+- one bullet per project line
+- optional bullet lines under each project for outcomes
 
-LANGUAGES: lang1, lang2, lang3
-FRAMEWORKS: framework1, framework2
-TOOLS: tool1, tool2, tool3
-LIBRARIES: lib1, lib2
+## Technical Skills
+- Languages: ...
+- Frameworks: ...
+- Developer Tools: ...
+- Libraries: ...
 
-Resume content to extract (may be LaTeX or plain text):
-{resume_content}
+RULES:
+- Output markdown only; no JSON, no preface, no explanation.
+- Preserve names, dates, and technologies from source.
+- Prioritize entries relevant to the job description.
 
-Job description (for context):
+JOB DESCRIPTION:
 {data.job_description}
 
-Extract EVERYTHING from the resume. Include ALL experience entries, ALL projects, and ALL skills. Keep text exactly as written."""
+RESUME CONTENT:
+{resume_content}
+"""
 
     try:
         ai_text = await call_anthropic(prompt, data.temperature, data.max_tokens)
         
-        parsed = parse_extracted_resume(ai_text)
-        
-        if not parsed.get("name"):
-            print(f"⚠️  No name extracted. AI Response:\n{ai_text[:500]}\n")
-            fallback_name = extract_fallback_name(resume_content)
-            parsed["name"] = fallback_name
+        sections = parse_markdown_sections(ai_text)
+        contact = extract_contact_info(resume_content)
+        pdf_bytes = build_pdf_bytes(contact, sections)
 
-        # Validate and clean the data structure
-        resume_data = {
-            "name": str(parsed.get("name", "")).strip() or "Your Name",
-            "email": str(parsed.get("email", "")).strip() or "",
-            "phone": str(parsed.get("phone", "")).strip() or "",
-            "linkedin": str(parsed.get("linkedin", "")).strip() or "",
-            "github": str(parsed.get("github", "")).strip() or "",
-            "education": [],
-            "experience": [],
-            "projects": [],
-            "skills": {}
-        }
-        
-        # Clean education - keep empty if not provided
-        if isinstance(parsed.get("education"), list) and len(parsed["education"]) > 0:
-            for edu in parsed["education"][:2]:
-                if isinstance(edu, dict) and edu.get("school"):
-                    resume_data["education"].append({
-                        "school": str(edu.get("school", "")).strip(),
-                        "location": str(edu.get("location", "")).strip(),
-                        "degree": str(edu.get("degree", "")).strip(),
-                        "dates": str(edu.get("dates", "")).strip()
-                    })
-        
-        # Clean experience
-        if isinstance(parsed.get("experience"), list) and len(parsed["experience"]) > 0:
-            for exp in parsed["experience"][:3]:
-                if isinstance(exp, dict) and exp.get("role") and exp.get("company"):
-                    bullets = []
-                    if isinstance(exp.get("bullets"), list):
-                        # Accept bullets even if short, since they're from the source
-                        bullets = [str(b).strip() for b in exp["bullets"] if isinstance(b, str) and len(str(b).strip()) > 5][:5]
-                    
-                    if bullets or exp.get("role"):  # Include even if no bullets
-                        resume_data["experience"].append({
-                            "role": str(exp.get("role", "")).strip(),
-                            "company": str(exp.get("company", "")).strip(),
-                            "location": str(exp.get("location", "")).strip(),
-                            "dates": str(exp.get("dates", "")).strip(),
-                            "bullets": bullets
-                        })
-        
-        # Clean projects
-        if isinstance(parsed.get("projects"), list) and len(parsed["projects"]) > 0:
-            for proj in parsed["projects"][:2]:
-                if isinstance(proj, dict) and proj.get("name"):
-                    bullets = []
-                    if isinstance(proj.get("bullets"), list):
-                        bullets = [str(b).strip() for b in proj["bullets"] if isinstance(b, str) and len(str(b).strip()) > 5][:4]
-                    
-                    resume_data["projects"].append({
-                        "name": str(proj.get("name", "")).strip(),
-                        "tech": str(proj.get("tech", "")).strip(),
-                        "dates": str(proj.get("dates", "")).strip(),
-                        "bullets": bullets
-                    })
-        
-        # Clean skills - only include if actually present
-        if isinstance(parsed.get("skills"), dict):
-            skills = parsed["skills"]
-            resume_data["skills"] = {
-                "languages": str(skills.get("languages", "")).strip(),
-                "frameworks": str(skills.get("frameworks", "")).strip(),
-                "tools": str(skills.get("tools", "")).strip(),
-                "libraries": str(skills.get("libraries", "")).strip()
-            }
-
-        output = build_output_text(resume_data)
-        latex = build_base_template_latex(resume_data)
-
-        return TailorResponse(output=output, latex=latex)
+        return StreamingResponse(
+            BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=tailored_resume.pdf"},
+        )
 
     except httpx.HTTPStatusError as e:
         error_detail = ""
