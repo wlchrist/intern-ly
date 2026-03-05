@@ -199,15 +199,13 @@ def build_resume_latex(resume: ResumeJSON) -> str:
   \resumeSubHeadingListStart
 """
         for entry in resume.sections.projects:
-            tech_and_dates = f"{entry.tech_stack} | {entry.dates}" if entry.tech_stack else entry.dates
-            # Truncate tech/dates to prevent overflow on right side of heading
-            tech_and_dates = truncate_at_word(tech_and_dates, max_len=50)
-            latex += f"  \\resumeSubheadingSimple{{{escape_latex(entry.title)}}}{{{escape_latex(tech_and_dates)}}}\n"
+            # Just use dates for the second parameter, tech stack goes in bullets via rewrite
+            latex += f"  \\resumeSubheadingSimple{{{escape_latex(entry.title)}}}{{{escape_latex(entry.dates)}}}\n"
             if entry.highlights:
                 latex += "  \\resumeItemListStart\n"
                 for highlight in entry.highlights:
                     latex += f"    \\resumeItem{{{escape_latex(highlight)}}}\n"
-                latex += "  \\resumeItemListEnd\n\n"
+                latex += "  \\resumeItemListEnd\n"
         latex += "  \\resumeSubHeadingListEnd\n\n"
     
     # Skills section
