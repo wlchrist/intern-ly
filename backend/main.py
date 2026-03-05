@@ -471,7 +471,7 @@ async def tailor_resume(request: Request, data: TailorRequest):
     if not data.job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
-    prompt = f"""Extract and tailor this resume for the job description.
+    prompt = f"""You are a resume extraction expert. Parse the resume and return ONLY valid JSON with no other text.
 
 RESUME:
 {data.master_latex}
@@ -479,49 +479,50 @@ RESUME:
 JOB DESCRIPTION:
 {data.job_description}
 
-Instructions:
-1. Extract ALL contact info visible (name, email, phone, linkedin, github)
-2. Extract ALL education entries as-is
-3. Extract ALL experience + project bullets exactly as written
-4. Reorder/select most relevant for the job (no fabrication)
-5. Extract skills and categorize them
-
-Return ONLY valid JSON:
+Extract ALL resume data into this exact JSON structure:
 {{
-  "name": "extracted name",
-  "email": "extracted email or empty string",
-  "phone": "extracted phone or empty string",
-  "linkedin": "extracted linkedin or empty string",
-  "github": "extracted github or empty string",
+  "name": "full name from resume header",
+  "email": "first email address found",
+  "phone": "phone number or empty string",
+  "linkedin": "linkedin URL or empty string",
+  "github": "github URL or empty string",
   "education": [
-    {{"school": "school name", "location": "location", "degree": "degree", "dates": "dates"}}
+    {{"school": "university name", "location": "city, state", "degree": "degree name", "dates": "date range"}}
   ],
   "experience": [
-    {{"role": "role", "company": "company", "location": "location", "dates": "dates", "bullets": ["bullet 1", "bullet 2"]}}
+    {{"role": "job title", "company": "company name", "location": "city, state", "dates": "date range", "bullets": ["full bullet text", "another bullet"]}}
   ],
   "projects": [
-    {{"name": "name", "tech": "tech", "dates": "dates", "bullets": ["bullet 1"]}}
+    {{"name": "project name", "tech": "technologies or stack", "dates": "dates", "bullets": ["description", "another description"]}}
   ],
   "skills": {{
-    "languages": "comma separated",
-    "frameworks": "comma separated",
-    "tools": "comma separated",
-    "libraries": "comma separated"
+    "languages": "comma separated language list",
+    "frameworks": "comma separated frameworks",
+    "tools": "comma separated tools",
+    "libraries": "comma separated libraries"
   }}
 }}
+
+CRITICAL RULES:
+1. Extract text EXACTLY as it appears - do NOT modify, rephrase, or fabricate
+2. Keep LaTeX formatting in bullet text
+3. Use empty strings "" for missing fields
+4. Return ONLY the JSON object - no markdown, no explanation, no extra text
+5. All arrays should contain ALL items from the resume, not a subset
+6. Each bullet, project description, and skill should be the exact text from the resume
 """
 
     try:
         ai_text = await call_anthropic(prompt, data.temperature, data.max_tokens)
-        print(f"AI Response:\n{ai_text}\n")  # Debug logging
         
         parsed = try_extract_json(ai_text)
         if not parsed:
-            print("Failed to parse JSON from AI response")
+            print(f"❌ JSON Parse Failed. AI Response:\n{ai_text[:500]}\n")  # Log first 500 chars
             # Fallback: try to extract at least the name from the LaTeX
             import re
             name_match = re.search(r'\\scshape\s+([^\\]+)', data.master_latex)
             fallback_name = name_match.group(1).strip() if name_match else "Your Name"
+            print(f"Using fallback name: {fallback_name}")
             parsed = {"name": fallback_name}
 
         # Validate and clean the data structure
