@@ -719,10 +719,22 @@ def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
     pdf.drawString((width - name_width) / 2, y, name)
     y -= 20
     
-    # Contact info (centered, smaller font)
+    # Contact info - ALL on one line (Jake's template style)
     contact_parts = []
+    
     if contact.get("email"):
         contact_parts.append(contact["email"])
+    
+    if contact.get("linkedin"):
+        # Clean URL: https://linkedin.com/in/... → linkedin.com/in/...
+        linkedin_clean = contact["linkedin"].replace("https://", "").replace("http://", "").replace("www.", "")
+        contact_parts.append(linkedin_clean)
+    
+    if contact.get("github"):
+        # Clean URL: https://github.com/... → github.com/...
+        github_clean = contact["github"].replace("https://", "").replace("http://", "").replace("www.", "")
+        contact_parts.append(github_clean)
+    
     if contact.get("phone"):
         contact_parts.append(contact["phone"])
     
@@ -731,26 +743,9 @@ def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
         pdf.setFont("Times-Roman", 10)
         contact_width = pdf.stringWidth(contact_line, "Times-Roman", 10)
         pdf.drawString((width - contact_width) / 2, y, contact_line)
-        y -= 13
+        y -= 16
     
-    # URLs on separate line
-    url_parts = []
-    if contact.get("linkedin"):
-        url_parts.append(contact["linkedin"])
-    if contact.get("github"):
-        url_parts.append(contact["github"])
-    
-    if url_parts:
-        url_line = " | ".join(url_parts)
-        pdf.setFont("Times-Roman", 9)
-        # Wrap if too long
-        wrapped_urls = wrap_text(url_line, "Times-Roman", 9, right_margin - left_margin)
-        for url_line_wrapped in wrapped_urls:
-            url_width = pdf.stringWidth(url_line_wrapped, "Times-Roman", 9)
-            pdf.drawString((width - url_width) / 2, y, url_line_wrapped)
-            y -= 12
-    
-    y -= 10  # Extra space after header
+    y -= 6  # Extra space after header
     
     # Section order matching Jake's template
     section_order = [
