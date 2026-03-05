@@ -10,10 +10,13 @@ import json
 import os
 from io import BytesIO
 import re
-import subprocess
-import tempfile
-from pathlib import Path
 from dotenv import load_dotenv
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import Paragraph, Frame
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.units import inch
 
 load_dotenv()
 
@@ -590,136 +593,142 @@ def extract_contact_info(resume_content: str) -> dict:
     }
 
 
-def escape_latex(text: str) -> str:
-    """Escape special LaTeX characters"""
-    replacements = {
-        "\\": "\\textbackslash{}",
-        "&": "\\&",
-        "%": "\\%",
-        "$": "\\$",
-        "#": "\\#",
-        "_": "\\_",
-        "{": "\\{",
-        "}": "\\}",
-        "~": "\\textasciitilde{}",
-        "^": "\\textasciicircum{}",
-    }
-    result = text
-    for char, escaped in replacements.items():
-        result = result.replace(char, escaped)
-    return result
-
-
-def build_latex_sections(sections: dict) -> str:
-    """Build LaTeX section content from parsed resume data"""
-    latex_content = []
-    
-    # Education section
-    if sections.get("education"):
-        latex_content.append("%-----------EDUCATION-----------")
-        latex_content.append("\\section{Education}")
-        latex_content.append("  \\resumeSubHeadingListStart")
-        for item in sections["education"]:
-            escaped_item = escape_latex(item)
-            latex_content.append(f"    \\resumeItem{{{escaped_item}}}")
-        latex_content.append("  \\resumeSubHeadingListEnd")
-        latex_content.append("")
-    
-    # Experience section
-    if sections.get("experience"):
-        latex_content.append("%-----------EXPERIENCE-----------")
-        latex_content.append("\\section{Experience}")
-        latex_content.append("  \\resumeSubHeadingListStart")
-        for item in sections["experience"]:
-            escaped_item = escape_latex(item)
-            latex_content.append(f"    \\resumeItem{{{escaped_item}}}")
-        latex_content.append("  \\resumeSubHeadingListEnd")
-        latex_content.append("")
-    
-    # Projects section
-    if sections.get("projects"):
-        latex_content.append("%-----------PROJECTS-----------")
-        latex_content.append("\\section{Technical Projects}")
-        latex_content.append("  \\resumeSubHeadingListStart")
-        for item in sections["projects"]:
-            escaped_item = escape_latex(item)
-            latex_content.append(f"    \\resumeItem{{{escaped_item}}}")
-        latex_content.append("  \\resumeSubHeadingListEnd")
-        latex_content.append("")
-    
-    # Technical Skills section
-    if sections.get("technical_skills"):
-        latex_content.append("%-----------TECHNICAL SKILLS-----------")
-        latex_content.append("\\section{Technical Skills}")
-        latex_content.append(" \\begin{itemize}[leftmargin=0.15in, label={}]")
-        latex_content.append("    \\small{\\item{")
-        for item in sections.get("technical_skills", []):
-            escaped_item = escape_latex(item)
-            latex_content.append(f"     {escaped_item} \\\\")
-        latex_content.append("    }}")
-        latex_content.append(" \\end{itemize}")
-    
-    return "\n".join(latex_content)
-
-
 def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
-    """Build PDF by filling Jake's LaTeX template and compiling with pdflatex"""
-    # Read template
-    template_path = Path(__file__).parent / "resume_template.tex"
-    with open(template_path, "r") as f:
-        template = f.read()
+    """Build professional PDF matching Jake's resume template style using reportlab"""
+    buffer = BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
     
-    # Build contact line
-    name = (contact.get("name") or "Your Name").strip("{}")
-    contact_bits = [contact.get("email", "")]
-    if contact.get("phone"):
-        contact_bits.append(contact["phone"])
-    if contact.get("linkedin"):
-        contact_bits.append(f"\\href{{{contact['linkedin']}}}{{\\underline{{linkedin}}}}")
-    if contact.get("github"):
-        contact_bits.append(f"\\href{{{contact['github']}}}{{\\underline{{github}}}}")
+    # Margins matching Jake's template
+    left_margin = 0.5 * inch
+    right_margin = width - 0.5 * inch
+    top_margin = height - 0.5 * inch
     
-    contact_line = " $|$ ".join([item for item in contact_bits if item])
+    y = top_margin
     
-    # Build content sections
-    content = build_latex_sections(sections)
+    def ensure_space(needed: float = 20):
+        nonlocal y
+        if y - needed < 0.75 * inch:
+            pdf.showPage()
+            y = top_margin
     
-    # Fill template
-    filled_tex = template.replace("{NAME}", escape_latex(name))
-    filled_tex = filled_tex.replace("CONTACT_INFO", contact_line)
-    filled_tex = filled_tex.replace("{CONTENT}", content)
+    def draw_section_header(title: str):
+        nonlocal y
+        ensure_space(28)
+        # Section title in uppercase, large, bold
+        pdf.setFont("Times-Bold", 12)
+        pdf.drawString(left_margin, y, title.upper())
+        y -= 3
+        # Horizontal line under section
+        pdf.setStrokeColorRGB(0, 0, 0)
+        pdf.setLineWidth(0.5)
+        pdf.line(left_margin, y, right_margin, y)
+        y -= 14
     
-    # Compile LaTeX to PDF
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tex_file = Path(tmpdir) / "resume.tex"
-        tex_file.write_text(filled_tex)
+    def wrap_text(text: str, font_name: str, font_size: int, max_width: float) -> list:
+        """Wrap text to fit within max_width"""
+        words = text.split()
+        lines = []
+        current_line = []
         
-        # Run pdflatex
-        try:
-            result = subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", "-output-directory", tmpdir, str(tex_file)],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            pdf_file = Path(tmpdir) / "resume.pdf"
-            if not pdf_file.exists():
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"PDF compilation failed: {result.stderr}"
-                )
-            
-            return pdf_file.read_bytes()
-        except FileNotFoundError:
-            raise HTTPException(
-                status_code=500,
-                detail="pdflatex not found. LaTeX tools must be installed on the server."
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=500, detail="PDF compilation timed out")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"PDF compilation error: {str(e)}")
+        for word in words:
+            test_line = " ".join(current_line + [word])
+            if pdf.stringWidth(test_line, font_name, font_size) <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(" ".join(current_line))
+        
+        return lines if lines else [""]
+    
+    def draw_bullet_item(text: str):
+        nonlocal y
+        # Bullet with proper indentation
+        bullet_x = left_margin + 10
+        text_x = left_margin + 20
+        text_width = right_margin - text_x
+        
+        # Wrap the text
+        pdf.setFont("Times-Roman", 11)
+        wrapped_lines = wrap_text(text, "Times-Roman", 11, text_width)
+        
+        for i, line in enumerate(wrapped_lines):
+            ensure_space(14)
+            if i == 0:
+                # Draw bullet for first line
+                pdf.setFont("Times-Roman", 11)
+                pdf.drawString(bullet_x, y, "•")
+            pdf.drawString(text_x, y, line)
+            y -= 13
+    
+    # Header: Name (centered, large, bold, small caps effect)
+    pdf.setTitle("Tailored Resume")
+    name = (contact.get("name") or "Your Name").strip("{}")
+    pdf.setFont("Times-Bold", 24)
+    name_width = pdf.stringWidth(name, "Times-Bold", 24)
+    pdf.drawString((width - name_width) / 2, y, name)
+    y -= 20
+    
+    # Contact info (centered, smaller font)
+    contact_parts = []
+    if contact.get("email"):
+        contact_parts.append(contact["email"])
+    if contact.get("phone"):
+        contact_parts.append(contact["phone"])
+    
+    if contact_parts:
+        contact_line = " | ".join(contact_parts)
+        pdf.setFont("Times-Roman", 10)
+        contact_width = pdf.stringWidth(contact_line, "Times-Roman", 10)
+        pdf.drawString((width - contact_width) / 2, y, contact_line)
+        y -= 13
+    
+    # URLs on separate line
+    url_parts = []
+    if contact.get("linkedin"):
+        url_parts.append(contact["linkedin"])
+    if contact.get("github"):
+        url_parts.append(contact["github"])
+    
+    if url_parts:
+        url_line = " | ".join(url_parts)
+        pdf.setFont("Times-Roman", 9)
+        # Wrap if too long
+        wrapped_urls = wrap_text(url_line, "Times-Roman", 9, right_margin - left_margin)
+        for url_line_wrapped in wrapped_urls:
+            url_width = pdf.stringWidth(url_line_wrapped, "Times-Roman", 9)
+            pdf.drawString((width - url_width) / 2, y, url_line_wrapped)
+            y -= 12
+    
+    y -= 10  # Extra space after header
+    
+    # Section order matching Jake's template
+    section_order = [
+        ("Education", "education"),
+        ("Experience", "experience"),
+        ("Technical Projects", "projects"),
+        ("Technical Skills", "technical_skills")
+    ]
+    
+    for section_title, section_key in section_order:
+        items = sections.get(section_key, [])
+        if not items:
+            continue
+        
+        draw_section_header(section_title)
+        
+        for item in items:
+            draw_bullet_item(item.strip())
+        
+        y -= 5  # Extra space between sections
+    
+    pdf.save()
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 async def call_anthropic(prompt: str, temperature: float, max_tokens: int) -> str:
