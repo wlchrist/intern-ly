@@ -642,6 +642,11 @@ def is_valid_contact_field(value: str, field_type: str) -> bool:
         github_parts = value_lower.split("github.com/")
         if len(github_parts) < 2 or not github_parts[1].strip():
             return False
+
+    elif field_type == "phone":
+        digits_only = re.sub(r"\D", "", value)
+        if len(digits_only) < 10 or len(digits_only) > 15:
+            return False
     
     return True
 
@@ -650,26 +655,62 @@ def normalize_contact_value(value: str) -> str:
     return (value or "").strip().strip("{}[]()").rstrip(".,;|")
 
 
+def pick_best_linkedin_candidate(candidates: list[str]) -> str:
+    best = ""
+    best_score = -1
+    for candidate in candidates:
+        cleaned = normalize_contact_value(candidate).replace("www.", "")
+        if not cleaned:
+            continue
+        if not cleaned.startswith("http://") and not cleaned.startswith("https://"):
+            cleaned = f"https://{cleaned}"
+        if "/in/" not in cleaned.lower():
+            continue
+        after_in = cleaned.lower().split("/in/", 1)[1].strip("/")
+        score = len(after_in)
+        if score > best_score:
+            best = cleaned
+            best_score = score
+    return best
+
+
+def pick_best_phone_candidate(candidates: list[str]) -> str:
+    best = ""
+    best_score = -1
+    for candidate in candidates:
+        cleaned = normalize_contact_value(candidate)
+        digits_only = re.sub(r"\D", "", cleaned)
+        if len(digits_only) < 10 or len(digits_only) > 15:
+            continue
+        score = len(digits_only)
+        if score > best_score:
+            best = cleaned
+            best_score = score
+    return best
+
+
 def extract_contact_info(resume_content: str) -> dict:
-    # Try to extract from LaTeX \href{URL}{display_text} first
-    linkedin_href = re.search(r"\\href\{((?:https?://)?(?:www\.)?linkedin\.com/in/[^}]+)\}", resume_content)
+    # Collect contact candidates from LaTeX href and plain text
+    linkedin_href_candidates = re.findall(
+        r"\\href\{((?:https?://)?(?:www\.)?linkedin\.com/in/[^}]+)\}\{[^}]*\}",
+        resume_content,
+    )
+    linkedin_plain_candidates = re.findall(
+        r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_\-.%]+/?",
+        resume_content,
+    )
+    linkedin_url = pick_best_linkedin_candidate(linkedin_href_candidates + linkedin_plain_candidates)
+
     github_href = re.search(r"\\href\{((?:https?://)?(?:www\.)?github\.com/[^}]+)\}", resume_content)
     
     # Fallback to plain URL search if no \href found
     email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", resume_content)
-    phone_match = re.search(
-        r"(?:\+?1[\s\-.]?)?(?:\(\d{3}\)|\d{3})[\s\-.]?\d{3}[\s\-.]?\d{4}",
+    phone_candidates = re.findall(
+        r"(?:\+?\d{1,3}[\s\-.~]?)?(?:\(\d{3}\)|\d{3})[\s\-.~]?\d{3}[\s\-.~]?\d{4}",
         resume_content,
     )
-    if not phone_match:
-        phone_match = re.search(r"(?:\+?\d[\d\-\s().]{7,}\d)", resume_content)
-    
-    # Use href URLs if found, otherwise search for plain URLs
-    if linkedin_href:
-        linkedin_url = linkedin_href.group(1)
-    else:
-        linkedin_match = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_\-]+/?", resume_content)
-        linkedin_url = linkedin_match.group(0) if linkedin_match else ""
+    if not phone_candidates:
+        phone_candidates = re.findall(r"(?:\+?\d[\d\-\s().~]{7,}\d)", resume_content)
     
     if github_href:
         github_url = github_href.group(1)
@@ -679,7 +720,7 @@ def extract_contact_info(resume_content: str) -> dict:
     
     # Extract raw values
     email = normalize_contact_value(email_match.group(0) if email_match else "")
-    phone = normalize_contact_value(phone_match.group(0) if phone_match else "")
+    phone = pick_best_phone_candidate(phone_candidates)
     linkedin_url = normalize_contact_value(linkedin_url)
     github_url = normalize_contact_value(github_url)
     
