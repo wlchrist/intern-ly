@@ -1,8 +1,5 @@
 [build]
 providers = ["python"]
 
-[build.nix]
-packages = ["texlive", "gcc"]
-
 [start]
 cmd = "python main.py"
