@@ -53,6 +53,9 @@ function App() {
   const [error, setError] = useState('');
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [githubUser, setGithubUser] = useState<string | null>(null);
+  const [useGitHubProjects, setUseGitHubProjects] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const hasAutoResumedRef = useRef(false);
 
   // Load persisted data from storage when component mounts
@@ -109,16 +112,27 @@ function App() {
     }
   }, [jobDescription]);
 
-  // Save fileName to storage whenever it changes
+  // Save useGitHubProjects to storage
   useEffect(() => {
-    if (typeof chrome !== 'undefined' && chrome.storage?.local && fileName) {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       chrome.storage.local
         .set({
-          internly_file_name: fileName,
+          internly_use_github_projects: useGitHubProjects,
         })
         .catch(() => undefined);
     }
-  }, [fileName]);
+  }, [useGitHubProjects]);
+
+  // Save githubUser to storage
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local
+        .set({
+          internly_github_user: githubUser || '',
+        })
+        .catch(() => undefined);
+    }
+  }, [githubUser]);
 
   // Save isGenerating state to storage
   useEffect(() => {
@@ -167,6 +181,15 @@ function App() {
 
     resumeGeneration();
   }, [isGenerating, masterResume, jobDescription]);
+
+  const handleGitHubLogin = () => {
+    // Placeholder for GitHub OAuth flow
+    setGithubUser('wlchrist'); // Mock user for now
+  };
+
+  const handleGitHubLogout = () => {
+    setGithubUser(null);
+  };
 
   const isReady = useMemo(
     () => masterResume.trim().length > 0 && jobDescription.trim().length > 0,
@@ -230,8 +253,50 @@ function App() {
 
   return (
     <div className="app">
-      <h1>Intern.ly</h1>
-      <p className="subtitle">Tailor resumes with AI parsing and a consistent base template.</p>
+      <div className="header">
+        <div className="title-section">
+          <h1>Intern.ly</h1>
+          <p className="subtitle">Tailor resumes with AI parsing and a consistent base template.</p>
+        </div>
+        <div className="auth-section">
+          {githubUser ? (
+            <div className="github-user">
+              <span className="user-badge">💻 {githubUser}</span>
+              <button type="button" className="logout-btn" onClick={handleGitHubLogout}>
+                Logout
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="github-btn" onClick={handleGitHubLogin}>
+              Login with GitHub
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="options-toggle">
+        <button type="button" className="toggle-btn" onClick={() => setShowOptions(!showOptions)}>
+          {showOptions ? '✕' : '⚙'} Options
+        </button>
+      </div>
+
+      {showOptions && (
+        <div className="options-panel">
+          <div className="option-item">
+            <label htmlFor="use-github-projects">
+              <input
+                id="use-github-projects"
+                type="checkbox"
+                checked={useGitHubProjects}
+                onChange={(e) => setUseGitHubProjects(e.target.checked)}
+                disabled={!githubUser}
+              />
+              <span>Pull projects from GitHub</span>
+            </label>
+            <p className="option-hint">Automatically fetch and include your GitHub projects in the resume</p>
+          </div>
+        </div>
+      )}
 
       <div className="section">
         <label htmlFor="resume-upload">1) Upload master resume (.tex, .txt, .md, .rtf)</label>
