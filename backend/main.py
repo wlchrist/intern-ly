@@ -99,6 +99,7 @@ DRAFT TO REWRITE:
     
     # Call Anthropic API
     try:
+        print(f"Calling Anthropic API with model: {payload['model']}")
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(anthropic_url, headers=headers, json=payload)
             response.raise_for_status()
@@ -117,15 +118,24 @@ DRAFT TO REWRITE:
             return RewriteResponse(rewritten=text_content)
             
     except httpx.HTTPStatusError as e:
+        error_detail = ""
+        try:
+            error_detail = e.response.text
+        except:
+            error_detail = str(e)
+        
+        print(f"Anthropic API Error {e.response.status_code}: {error_detail}")
+        
         if e.response.status_code == 401:
-            raise HTTPException(status_code=500, detail="API authentication failed")
+            raise HTTPException(status_code=500, detail="API authentication failed - check your API key")
         elif e.response.status_code == 429:
             raise HTTPException(status_code=429, detail="AI service rate limit exceeded. Please try again later.")
         else:
-            raise HTTPException(status_code=500, detail=f"AI service error: {e.response.status_code}")
+            raise HTTPException(status_code=500, detail=f"AI service error {e.response.status_code}: {error_detail}")
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="AI service request timed out")
     except Exception as e:
+        print(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 
