@@ -525,7 +525,8 @@ def extract_fallback_name(content: str) -> str:
 
 
 def parse_markdown_sections(markdown_text: str) -> dict:
-    sections: dict[str, list[str]] = {
+    """Parse structured markdown into sections with headers and bullets"""
+    sections: dict[str, list[dict]] = {
         "education": [],
         "experience": [],
         "projects": [],
@@ -533,47 +534,78 @@ def parse_markdown_sections(markdown_text: str) -> dict:
     }
 
     current_section: str | None = None
+    current_entry: dict | None = None
 
     def clean_markdown(text: str) -> str:
-        """Remove markdown formatting characters (bold, italic, underscores)"""
+        """Remove markdown formatting characters but preserve content"""
         # Remove **bold** → bold
         text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
         # Remove *italic* → italic
         text = re.sub(r"\*(.+?)\*", r"\1", text)
-        # Remove _underscores_ → underscores (but keep numbers like _2023_)
-        text = re.sub(r"_(.+?)_", r"\1", text)
-        # Clean trailing markdown asterisks
-        text = text.replace("**", "").replace("*", "").replace("__", "").replace("_", "")
+        # Clean trailing markdown
+        text = text.replace("**", "").replace("*", "")
         return text.strip()
+
+    def is_header_line(line: str) -> bool:
+        """Check if line is an entry header (bold text or starts with **)"""
+        return line.startswith("**") or "**" in line
 
     for raw_line in markdown_text.splitlines():
         line = raw_line.strip()
         if not line:
             continue
 
-        header = line.lstrip("#").strip().lower()
-        if header == "education":
-            current_section = "education"
-            continue
-        if header == "experience":
-            current_section = "experience"
-            continue
-        if header == "projects":
-            current_section = "projects"
-            continue
-        if header in ("technical skills", "skills"):
-            current_section = "technical_skills"
+        # Check for section headers
+        if line.startswith("##"):
+            # Save previous entry if exists
+            if current_entry and current_section:
+                sections[current_section].append(current_entry)
+                current_entry = None
+            
+            header = line.lstrip("#").strip().lower()
+            if header == "education":
+                current_section = "education"
+            elif header == "experience":
+                current_section = "experience"
+            elif header == "projects":
+                current_section = "projects"
+            elif header in ("technical skills", "skills"):
+                current_section = "technical_skills"
             continue
 
         if current_section is None:
             continue
 
-        # Remove bullet markers
-        normalized = re.sub(r"^[-*]\s+", "", line)
-        # Clean markdown formatting
-        normalized = clean_markdown(normalized)
-        if normalized:
-            sections[current_section].append(normalized)
+        # Entry header (job title, project name, etc.)
+        if is_header_line(line):
+            # Save previous entry if exists
+            if current_entry:
+                sections[current_section].append(current_entry)
+            
+            cleaned = clean_markdown(line)
+            current_entry = {
+                "header": cleaned,
+                "bullets": []
+            }
+        
+        # Bullet point
+        elif line.startswith("- "):
+            bullet_text = line[2:].strip()  # Remove "- " prefix
+            cleaned = clean_markdown(bullet_text)
+            
+            if current_entry:
+                # Add to current entry's bullets
+                current_entry["bullets"].append(cleaned)
+            else:
+                # Create implicit entry for bullets without headers
+                current_entry = {
+                    "header": "",
+                    "bullets": [cleaned]
+                }
+
+    # Save final entry
+    if current_entry and current_section:
+        sections[current_section].append(current_entry)
 
     return sections
 
@@ -645,6 +677,20 @@ def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
         
         return lines if lines else [""]
     
+    def draw_entry_header(text: str):
+        """Draw job title, project name, or education header (bold)"""
+        nonlocal y
+        ensure_space(16)
+        
+        # Bold, slightly larger than bullets
+        pdf.setFont("Times-Bold", 11)
+        header_width = right_margin - left_margin
+        wrapped_lines = wrap_text(text, "Times-Bold", 11, header_width)
+        
+        for line in wrapped_lines:
+            pdf.drawString(left_margin, y, line)
+            y -= 14
+    
     def draw_bullet_item(text: str):
         nonlocal y
         # Bullet with proper indentation
@@ -715,14 +761,22 @@ def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
     ]
     
     for section_title, section_key in section_order:
-        items = sections.get(section_key, [])
-        if not items:
+        entries = sections.get(section_key, [])
+        if not entries:
             continue
         
         draw_section_header(section_title)
         
-        for item in items:
-            draw_bullet_item(item.strip())
+        for entry in entries:
+            # Draw entry header (job title, project name, etc.)
+            if entry.get("header"):
+                draw_entry_header(entry["header"])
+            
+            # Draw bullets for this entry
+            for bullet in entry.get("bullets", []):
+                draw_bullet_item(bullet.strip())
+            
+            y -= 3  # Small space between entries
         
         y -= 5  # Extra space between sections
     
@@ -844,26 +898,34 @@ TASK:
 4) Return ONLY markdown with these exact Jake template section headers:
 
 ## Education
-- one bullet per education entry
+**Degree, School, Location** (Dates)
+- Optional bullet for relevant coursework or honors
 
 ## Experience
-- one bullet per role/title line
-- optional bullet lines under each role for accomplishments
+**Job Title** | Dates
+**Company Name** | Location
+- Bullet point for accomplishment 1
+- Bullet point for accomplishment 2
+- Bullet point for accomplishment 3
 
 ## Projects
-- one bullet per project line
-- optional bullet lines under each project for outcomes
+**Project Name (Tech Stack)** | Dates
+- Bullet point describing implementation
+- Bullet point describing outcome
 
 ## Technical Skills
-- Languages: ...
-- Frameworks: ...
-- Developer Tools: ...
-- Libraries: ...
+- Languages: list languages
+- Frameworks: list frameworks
+- Developer Tools: list tools
+- Libraries: list libraries
 
 RULES:
 - Output markdown only; no JSON, no preface, no explanation.
-- Preserve names, dates, and technologies from source.
-- Prioritize entries relevant to the job description.
+- Use **bold** for job titles, company names, project names, and degree info
+- Put dates on the same line with job/project titles using | separator
+- Sub-bullets start with "- " (dash + space)
+- Preserve all names, dates, and technologies from source exactly
+- Prioritize entries relevant to the job description
 
 JOB DESCRIPTION:
 {data.job_description}
