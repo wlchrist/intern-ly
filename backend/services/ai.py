@@ -1,6 +1,9 @@
 """AI service: Rewrite resume bullets to match job description"""
 import json
+import logging
 from schemas import ResumeJSON, JobDescription
+
+logger = logging.getLogger(__name__)
 
 
 async def rewrite_resume(resume: ResumeJSON, job_desc: JobDescription, call_anthropic) -> ResumeJSON:
@@ -43,12 +46,28 @@ Do not change structure, metadata, or any other fields—only rewrite highlight 
     try:
         json_text = await call_anthropic(prompt, temperature=0.2, max_tokens=3000)
         
+        # Log what Claude returned for debugging
+        logger.info(f"Claude returned {len(json_text)} characters")
+        logger.debug(f"Claude response: {json_text[:500]}...")  # First 500 chars
+        
+        if not json_text or not json_text.strip():
+            raise ValueError("Claude returned empty response")
+        
+        # Try to extract JSON if Claude wrapped it in markdown
+        json_text = json_text.strip()
+        if json_text.startswith("```json"):
+            json_text = json_text.split("```json")[1].split("```")[0].strip()
+        elif json_text.startswith("```"):
+            json_text = json_text.split("```")[1].split("```")[0].strip()
+        
         # Parse and validate the JSON response
         rewritten_dict = json.loads(json_text)
         rewritten_resume = ResumeJSON.model_validate(rewritten_dict)
         
         return rewritten_resume
     except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error. Response was: {json_text[:1000]}")
         raise ValueError(f"Failed to parse Claude's JSON response: {e}")
     except Exception as e:
+        logger.error(f"AI rewrite error: {e}")
         raise ValueError(f"AI rewrite service error: {e}")
