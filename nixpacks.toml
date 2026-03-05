@@ -1,2 +1,5 @@
+[phases.setup]
+nixPkgs = ["texlive.combined.scheme-basic"]
+
 [start]
-cmd = "python main.py"
+cmd = "cd backend && python main.py"
