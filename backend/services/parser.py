@@ -1,6 +1,9 @@
 """Parser service: Extract resume content into structured JSON"""
 import json
+import logging
 from schemas import ResumeJSON
+
+logger = logging.getLogger(__name__)
 
 
 async def parse_resume(resume_content: str, call_anthropic) -> ResumeJSON:
@@ -72,12 +75,28 @@ RESUME TO PARSE:
     try:
         json_text = await call_anthropic(prompt, temperature=0.1, max_tokens=3000)
         
+        # Log what Claude returned for debugging
+        logger.info(f"Claude returned {len(json_text)} characters")
+        logger.debug(f"Claude response: {json_text[:500]}...")  # First 500 chars
+        
+        if not json_text or not json_text.strip():
+            raise ValueError("Claude returned empty response")
+        
+        # Try to extract JSON if Claude wrapped it in markdown
+        json_text = json_text.strip()
+        if json_text.startswith("```json"):
+            json_text = json_text.split("```json")[1].split("```")[0].strip()
+        elif json_text.startswith("```"):
+            json_text = json_text.split("```")[1].split("```")[0].strip()
+        
         # Parse and validate the JSON response
         resume_dict = json.loads(json_text)
         resume = ResumeJSON.model_validate(resume_dict)
         
         return resume
     except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error. Response was: {json_text[:1000]}")
         raise ValueError(f"Failed to parse Claude's JSON response: {e}")
     except Exception as e:
+        logger.error(f"Parser error: {e}")
         raise ValueError(f"Parser service error: {e}")
