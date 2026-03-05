@@ -42,7 +42,8 @@ class RewriteRequest(BaseModel):
 
 
 class TailorRequest(BaseModel):
-    master_latex: str
+    master_resume: str | None = None
+    master_latex: str | None = None
     job_description: str
     temperature: float = 0.2
     max_tokens: int = 2500  # Increased for structured extraction
@@ -496,6 +497,21 @@ def parse_extracted_resume(text: str) -> dict:
     return data
 
 
+def extract_fallback_name(content: str) -> str:
+    import re
+
+    latex_name_match = re.search(r'\\scshape\s+([^\\]+)', content)
+    if latex_name_match:
+        return latex_name_match.group(1).strip()
+
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    for line in lines[:12]:
+        if len(line) > 2 and len(line.split()) <= 4 and "@" not in line and "section" not in line.lower():
+            return line
+
+    return "Your Name"
+
+
 async def call_anthropic(prompt: str, temperature: float, max_tokens: int) -> str:
     anthropic_url = "https://api.anthropic.com/v1/messages"
     headers = {
@@ -593,8 +609,10 @@ DRAFT TO REWRITE:
 @app.post("/api/tailor", response_model=TailorResponse)
 @limiter.limit("10/minute")
 async def tailor_resume(request: Request, data: TailorRequest):
-    if not data.master_latex.strip():
-        raise HTTPException(status_code=400, detail="Master LaTeX resume is required")
+    resume_content = (data.master_resume or data.master_latex or "").strip()
+
+    if not resume_content:
+        raise HTTPException(status_code=400, detail="Master resume content is required")
     if not data.job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
@@ -633,8 +651,8 @@ FRAMEWORKS: framework1, framework2
 TOOLS: tool1, tool2, tool3
 LIBRARIES: lib1, lib2
 
-Resume to extract:
-{data.master_latex}
+Resume content to extract (may be LaTeX or plain text):
+{resume_content}
 
 Job description (for context):
 {data.job_description}
@@ -648,10 +666,7 @@ Extract EVERYTHING from the resume. Include ALL experience entries, ALL projects
         
         if not parsed.get("name"):
             print(f"⚠️  No name extracted. AI Response:\n{ai_text[:500]}\n")
-            # Fallback: try to extract at least the name from the LaTeX
-            import re
-            name_match = re.search(r'\\scshape\s+([^\\]+)', data.master_latex)
-            fallback_name = name_match.group(1).strip() if name_match else "Your Name"
+            fallback_name = extract_fallback_name(resume_content)
             parsed["name"] = fallback_name
 
         # Validate and clean the data structure

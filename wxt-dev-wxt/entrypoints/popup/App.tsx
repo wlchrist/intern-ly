@@ -116,14 +116,14 @@ function buildPdfFromOutput(output: string): jsPDF {
   return doc;
 }
 
-async function tailorResumeWithAi(masterLatex: string, jobDescription: string): Promise<TailorResponse> {
+async function tailorResumeWithAi(masterResume: string, jobDescription: string): Promise<TailorResponse> {
   const response = await fetch(`${BACKEND_URL}/api/tailor`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      master_latex: masterLatex,
+      master_resume: masterResume,
       job_description: jobDescription,
       temperature: 0.2,
       max_tokens: 1400,
@@ -144,7 +144,7 @@ async function tailorResumeWithAi(masterLatex: string, jobDescription: string): 
 }
 
 function App() {
-  const [masterLatex, setMasterLatex] = useState('');
+  const [masterResume, setMasterResume] = useState('');
   const [jobDescription, setJobDescription] = useState('');
   const [fileName, setFileName] = useState('');
   const [output, setOutput] = useState('');
@@ -154,8 +154,8 @@ function App() {
   const [isGenerating, setIsGenerating] = useState(false);
 
   const isReady = useMemo(
-    () => masterLatex.trim().length > 0 && jobDescription.trim().length > 0,
-    [masterLatex, jobDescription],
+    () => masterResume.trim().length > 0 && jobDescription.trim().length > 0,
+    [masterResume, jobDescription],
   );
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -164,13 +164,16 @@ function App() {
     if (!file) {
       return;
     }
-    if (!file.name.toLowerCase().endsWith('.tex')) {
-      setError('Please upload a .tex file.');
+    const supportedExtensions = ['.tex', '.txt', '.md', '.rtf'];
+    const lowerName = file.name.toLowerCase();
+    const isSupported = supportedExtensions.some((ext) => lowerName.endsWith(ext));
+    if (!isSupported) {
+      setError('Please upload a text-based resume file (.tex, .txt, .md, or .rtf).');
       return;
     }
     setFileName(file.name);
     const text = await file.text();
-    setMasterLatex(text);
+    setMasterResume(text);
   };
 
   const handleGenerate = async () => {
@@ -182,7 +185,7 @@ function App() {
 
     setIsGenerating(true);
     try {
-      const tailored = await tailorResumeWithAi(masterLatex, jobDescription);
+      const tailored = await tailorResumeWithAi(masterResume, jobDescription);
       setOutput(tailored.output);
       setGeneratedLatex(tailored.latex);
       setHasGenerated(true);
@@ -225,11 +228,11 @@ function App() {
   return (
     <div className="app">
       <h1>Intern.ly</h1>
-      <p className="subtitle">Tailor resumes with AI parsing and a consistent base LaTeX template.</p>
+      <p className="subtitle">Tailor resumes with AI parsing and a consistent base template.</p>
 
       <div className="section">
-        <label htmlFor="resume-upload">1) Upload master resume (.tex)</label>
-        <input id="resume-upload" type="file" accept=".tex" onChange={handleUpload} />
+        <label htmlFor="resume-upload">1) Upload master resume (.tex, .txt, .md, .rtf)</label>
+        <input id="resume-upload" type="file" accept=".tex,.txt,.md,.rtf,text/plain,text/markdown,application/rtf" onChange={handleUpload} />
         {fileName && <p className="hint">Loaded: {fileName}</p>}
       </div>
 
