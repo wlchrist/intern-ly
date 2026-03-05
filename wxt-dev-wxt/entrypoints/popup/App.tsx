@@ -37,9 +37,9 @@ async function tailorResumeWithAi(masterResume: string, jobDescription: string):
   }
 
   const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.includes('application/pdf')) {
-    const errorText = await response.text().catch(() => 'Unexpected non-PDF response.');
-    throw new Error(`Expected PDF response but got ${contentType || 'unknown type'}: ${errorText}`);
+  if (!contentType.includes('text/plain') && !contentType.includes('application/pdf')) {
+    const errorText = await response.text().catch(() => 'Unexpected response.');
+    throw new Error(`Expected LaTeX or PDF response but got ${contentType || 'unknown type'}: ${errorText}`);
   }
 
   return await response.blob();
@@ -105,13 +105,13 @@ function App() {
     }
   };
 
-  const downloadPdf = () => {
+  const downloadTex = () => {
     if (!generatedPdf) {
-      setError('Generate a resume draft before downloading .pdf.');
+      setError('Generate a resume draft before downloading .tex.');
       return;
     }
     const baseName = fileName ? fileName.replace(/\.[^/.]+$/, '') : 'internly_resume';
-    downloadBlob(generatedPdf, 'application/pdf', `${baseName}_tailored.pdf`);
+    downloadBlob(generatedPdf, 'text/plain', `${baseName}_tailored.tex`);
   };
 
   return (
@@ -137,22 +137,22 @@ function App() {
       </div>
 
       <div className="section">
-        <p className="hint">3) Generate tailored PDF resume (AI parsing + job-relevant rewriting)</p>
+        <p className="hint">3) Generate tailored resume LaTeX file (AI parsing + job-relevant rewriting)</p>
       </div>
 
       <div className="actions">
         <button type="button" onClick={handleGenerate} disabled={!isReady || isGenerating}>
-          {isGenerating ? 'Generating...' : 'Generate PDF'}
+          {isGenerating ? 'Generating...' : 'Generate Resume'}
         </button>
-        <button type="button" className="secondary" onClick={downloadPdf} disabled={!generatedPdf}>
-          Download .pdf
+        <button type="button" className="secondary" onClick={downloadTex} disabled={!generatedPdf}>
+          Download .tex
         </button>
       </div>
 
       {error && <p className="error">{error}</p>}
 
       {hasGenerated && !error && (
-        <p className="hint">Tailored PDF is ready. Download your output.</p>
+        <p className="hint">Tailored resume LaTeX is ready. Download and compile with pdflatex, Overleaf, or your local LaTeX tool.</p>
       )}
     </div>
   );
