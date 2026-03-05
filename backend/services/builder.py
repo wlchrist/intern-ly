@@ -9,14 +9,28 @@ def format_line(value: str, length: int = 100) -> str:
     return value[:length] if len(value) > length else value
 
 
+def truncate_at_word(text: str, max_len: int = 65) -> str:
+    """Truncate text at word boundary to prevent overflow"""
+    if len(text) <= max_len:
+        return text
+    
+    # Find last space within max_len
+    truncated = text[:max_len]
+    last_space = truncated.rfind(' ')
+    
+    if last_space > 0:
+        return text[:last_space] + "..."
+    else:
+        return truncated[:max_len-3] + "..."
+
+
 def escape_latex(text: str) -> str:
     """Escape special LaTeX characters and truncate long text"""
     if not text:
         return ""
-    # Truncate very long items to prevent overflow
-    max_len = 80
-    if len(text) > max_len:
-        text = text[:max_len] + "..."
+    
+    # Truncate at word boundary to prevent overflow
+    text = truncate_at_word(text, max_len=65)
     
     replacements = {
         "_": "\\_",
@@ -186,6 +200,8 @@ def build_resume_latex(resume: ResumeJSON) -> str:
 """
         for entry in resume.sections.projects:
             tech_and_dates = f"{entry.tech_stack} | {entry.dates}" if entry.tech_stack else entry.dates
+            # Truncate tech/dates to prevent overflow on right side of heading
+            tech_and_dates = truncate_at_word(tech_and_dates, max_len=50)
             latex += f"  \\resumeSubheadingSimple{{{escape_latex(entry.title)}}}{{{escape_latex(tech_and_dates)}}}\n"
             if entry.highlights:
                 latex += "  \\resumeItemListStart\n"
