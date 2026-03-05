@@ -610,6 +610,42 @@ def parse_markdown_sections(markdown_text: str) -> dict:
     return sections
 
 
+def is_valid_contact_field(value: str, field_type: str) -> bool:
+    """Validate contact info to filter out template/placeholder data"""
+    if not value or not value.strip():
+        return False
+    
+    value_lower = value.lower()
+    
+    # Common template/placeholder indicators
+    template_keywords = ["example", "yourname", "template", "sb2nov", "jake", "placeholder"]
+    if any(keyword in value_lower for keyword in template_keywords):
+        return False
+    
+    # Check for truncated URLs (ends with ... or similar)
+    if "..." in value or value.endswith("."):
+        return False
+    
+    # Field-specific validation
+    if field_type == "email":
+        # Must have @ and domain
+        if "@" not in value or "." not in value.split("@")[-1]:
+            return False
+    
+    elif field_type == "linkedin":
+        # Must have /in/ path (not just domain)
+        if "/in/" not in value_lower:
+            return False
+    
+    elif field_type == "github":
+        # Must have username after github.com/
+        github_parts = value_lower.split("github.com/")
+        if len(github_parts) < 2 or not github_parts[1].strip():
+            return False
+    
+    return True
+
+
 def extract_contact_info(resume_content: str) -> dict:
     # Try to extract from LaTeX \href{URL}{display_text} first
     linkedin_href = re.search(r"\\href\{(https?://(?:www\.)?linkedin\.com/in/[^}]+)\}", resume_content)
@@ -631,13 +667,18 @@ def extract_contact_info(resume_content: str) -> dict:
     else:
         github_match = re.search(r"(?:https?://)?(?:www\.)?github\.com/[A-Za-z0-9_\-]+", resume_content)
         github_url = github_match.group(0) if github_match else ""
-
+    
+    # Extract raw values
+    email = email_match.group(0) if email_match else ""
+    phone = phone_match.group(0) if phone_match else ""
+    
+    # Validate and filter out template/invalid data
     return {
         "name": extract_fallback_name(resume_content),
-        "email": email_match.group(0) if email_match else "",
-        "phone": phone_match.group(0) if phone_match else "",
-        "linkedin": linkedin_url,
-        "github": github_url,
+        "email": email if is_valid_contact_field(email, "email") else "",
+        "phone": phone if is_valid_contact_field(phone, "phone") else "",
+        "linkedin": linkedin_url if is_valid_contact_field(linkedin_url, "linkedin") else "",
+        "github": github_url if is_valid_contact_field(github_url, "github") else "",
     }
 
 
