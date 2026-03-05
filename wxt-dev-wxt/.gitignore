@@ -1,0 +1,20 @@
+# WXT build outputs
+.output
+.wxt
+
+# Environment variables
+.env
+.env.local
+
+# Dependencies
+node_modules
+
+# Editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
