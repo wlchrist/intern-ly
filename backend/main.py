@@ -646,20 +646,29 @@ def is_valid_contact_field(value: str, field_type: str) -> bool:
     return True
 
 
+def normalize_contact_value(value: str) -> str:
+    return (value or "").strip().strip("{}[]()").rstrip(".,;|")
+
+
 def extract_contact_info(resume_content: str) -> dict:
     # Try to extract from LaTeX \href{URL}{display_text} first
-    linkedin_href = re.search(r"\\href\{(https?://(?:www\.)?linkedin\.com/in/[^}]+)\}", resume_content)
-    github_href = re.search(r"\\href\{(https?://(?:www\.)?github\.com/[^}]+)\}", resume_content)
+    linkedin_href = re.search(r"\\href\{((?:https?://)?(?:www\.)?linkedin\.com/in/[^}]+)\}", resume_content)
+    github_href = re.search(r"\\href\{((?:https?://)?(?:www\.)?github\.com/[^}]+)\}", resume_content)
     
     # Fallback to plain URL search if no \href found
     email_match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", resume_content)
-    phone_match = re.search(r"(?:\+?\d[\d\-\s().]{7,}\d)", resume_content)
+    phone_match = re.search(
+        r"(?:\+?1[\s\-.]?)?(?:\(\d{3}\)|\d{3})[\s\-.]?\d{3}[\s\-.]?\d{4}",
+        resume_content,
+    )
+    if not phone_match:
+        phone_match = re.search(r"(?:\+?\d[\d\-\s().]{7,}\d)", resume_content)
     
     # Use href URLs if found, otherwise search for plain URLs
     if linkedin_href:
         linkedin_url = linkedin_href.group(1)
     else:
-        linkedin_match = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_\-]+", resume_content)
+        linkedin_match = re.search(r"(?:https?://)?(?:www\.)?linkedin\.com/in/[A-Za-z0-9_\-]+/?", resume_content)
         linkedin_url = linkedin_match.group(0) if linkedin_match else ""
     
     if github_href:
@@ -669,8 +678,10 @@ def extract_contact_info(resume_content: str) -> dict:
         github_url = github_match.group(0) if github_match else ""
     
     # Extract raw values
-    email = email_match.group(0) if email_match else ""
-    phone = phone_match.group(0) if phone_match else ""
+    email = normalize_contact_value(email_match.group(0) if email_match else "")
+    phone = normalize_contact_value(phone_match.group(0) if phone_match else "")
+    linkedin_url = normalize_contact_value(linkedin_url)
+    github_url = normalize_contact_value(github_url)
     
     # Validate and filter out template/invalid data
     return {
