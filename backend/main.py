@@ -35,6 +35,7 @@ ANTHROPIC_API_VERSION = os.getenv("ANTHROPIC_API_VERSION", "2023-06-01")
 
 class RewriteRequest(BaseModel):
     draft: str
+    job_description: str
     temperature: float = 0.2
     max_tokens: int = 700
 
@@ -79,14 +80,18 @@ async def rewrite_resume(request: Request, data: RewriteRequest):
         "messages": [
             {
                 "role": "user",
-                "content": f"""You are a professional resume writer. Rewrite the following resume draft to make it more compelling and professional while keeping ALL factual details unchanged.
+                "content": f"""You are a professional resume writer. Tailor the following resume draft to better match the job description while keeping ALL factual details unchanged.
+
+JOB DESCRIPTION:
+{data.job_description}
 
 STRICT REQUIREMENTS:
 1. Do NOT add any new facts, experiences, or technologies not present in the original
 2. Do NOT exaggerate or fabricate achievements
 3. Keep all bullet points factual and specific
-4. Improve clarity, impact, and professional tone
+4. Improve clarity, impact, and professional tone aligned with the job
 5. Maintain technical accuracy
+6. Emphasize relevant skills from the job description
 
 Return ONLY valid JSON in this exact format:
 {{"bullets": ["bullet 1", "bullet 2", ...], "skills": ["skill1", "skill2", ...]}}

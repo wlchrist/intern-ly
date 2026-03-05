@@ -523,6 +523,7 @@ async function rewriteDraftWithAnthropic(
     },
     body: JSON.stringify({
       draft: draftText,
+      job_description: jobDescription,
       temperature: 0.2,
       max_tokens: 700,
     }),
