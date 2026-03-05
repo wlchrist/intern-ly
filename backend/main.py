@@ -356,17 +356,109 @@ def build_base_template_latex(data: dict) -> str:
     return result
 
 
-def try_extract_json(raw: str) -> dict | None:
-    first = raw.find("{")
-    last = raw.rfind("}")
-    if first < 0 or last <= first:
-        return None
-
-    snippet = raw[first:last + 1]
-    try:
-        return json.loads(snippet)
-    except json.JSONDecodeError:
-        return None
+def parse_extracted_resume(text: str) -> dict:
+    """Parse resume data from simple key-value format"""
+    lines = text.strip().split('\n')
+    data = {
+        "name": "",
+        "email": "",
+        "phone": "",
+        "linkedin": "",
+        "github": "",
+        "education": [],
+        "experience": [],
+        "projects": [],
+        "skills": {"languages": "", "frameworks": "", "tools": "", "libraries": ""}
+    }
+    
+    current_section = None
+    current_entry = None
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Parse key-value pairs
+        if line.startswith("NAME:"):
+            data["name"] = line.replace("NAME:", "").strip()
+        elif line.startswith("EMAIL:"):
+            data["email"] = line.replace("EMAIL:", "").strip()
+        elif line.startswith("PHONE:"):
+            data["phone"] = line.replace("PHONE:", "").strip()
+        elif line.startswith("LINKEDIN:"):
+            data["linkedin"] = line.replace("LINKEDIN:", "").strip()
+        elif line.startswith("GITHUB:"):
+            data["github"] = line.replace("GITHUB:", "").strip()
+        elif line.startswith("LANGUAGES:"):
+            data["skills"]["languages"] = line.replace("LANGUAGES:", "").strip()
+        elif line.startswith("FRAMEWORKS:"):
+            data["skills"]["frameworks"] = line.replace("FRAMEWORKS:", "").strip()
+        elif line.startswith("TOOLS:"):
+            data["skills"]["tools"] = line.replace("TOOLS:", "").strip()
+        elif line.startswith("LIBRARIES:"):
+            data["skills"]["libraries"] = line.replace("LIBRARIES:", "").strip()
+        elif line.startswith("EDUCATION:"):
+            current_entry = {"school": "", "location": "", "degree": "", "dates": ""}
+            current_section = "education"
+        elif line.startswith("EXPERIENCE:"):
+            current_entry = {"role": "", "company": "", "location": "", "dates": "", "bullets": []}
+            current_section = "experience"
+        elif line.startswith("PROJECT:"):
+            current_entry = {"name": "", "tech": "", "dates": "", "bullets": []}
+            current_section = "projects"
+        elif current_section == "education":
+            if line.startswith("School:"):
+                current_entry["school"] = line.replace("School:", "").strip()
+            elif line.startswith("Location:"):
+                current_entry["location"] = line.replace("Location:", "").strip()
+            elif line.startswith("Degree:"):
+                current_entry["degree"] = line.replace("Degree:", "").strip()
+            elif line.startswith("Dates:"):
+                current_entry["dates"] = line.replace("Dates:", "").strip()
+                data["education"].append(current_entry)
+                current_entry = None
+        elif current_section == "experience":
+            if line.startswith("Role:"):
+                current_entry["role"] = line.replace("Role:", "").strip()
+            elif line.startswith("Company:"):
+                current_entry["company"] = line.replace("Company:", "").strip()
+            elif line.startswith("Location:"):
+                current_entry["location"] = line.replace("Location:", "").strip()
+            elif line.startswith("Dates:"):
+                current_entry["dates"] = line.replace("Dates:", "").strip()
+            elif line.startswith("- "):
+                current_entry["bullets"].append(line[2:])
+            elif line.startswith("EDUCATION:") or line.startswith("PROJECT:"):
+                if current_entry and current_entry.get("role"):
+                    data["experience"].append(current_entry)
+                current_entry = None
+                current_section = None
+        elif current_section == "projects":
+            if line.startswith("Name:"):
+                current_entry["name"] = line.replace("Name:", "").strip()
+            elif line.startswith("Tech:"):
+                current_entry["tech"] = line.replace("Tech:", "").strip()
+            elif line.startswith("Dates:"):
+                current_entry["dates"] = line.replace("Dates:", "").strip()
+            elif line.startswith("- "):
+                current_entry["bullets"].append(line[2:])
+            elif line.startswith("EDUCATION:") or line.startswith("EXPERIENCE:"):
+                if current_entry and current_entry.get("name"):
+                    data["projects"].append(current_entry)
+                current_entry = None
+                current_section = None
+    
+    # Append last entry if exists
+    if current_entry:
+        if current_section == "education" and current_entry.get("school"):
+            data["education"].append(current_entry)
+        elif current_section == "experience" and current_entry.get("role"):
+            data["experience"].append(current_entry)
+        elif current_section == "projects" and current_entry.get("name"):
+            data["projects"].append(current_entry)
+    
+    return data
 
 
 async def call_anthropic(prompt: str, temperature: float, max_tokens: int) -> str:
@@ -471,7 +563,39 @@ async def tailor_resume(request: Request, data: TailorRequest):
     if not data.job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
-    prompt = f"""You are a resume extraction expert. Parse the resume and return ONLY valid JSON with no other text.
+    prompt = f"""Extract resume data from the LaTeX. Return ONLY the extracted data in this format (no JSON, no markdown, no explanation):
+
+NAME: Full Name Here
+EMAIL: email@example.com
+PHONE: 123-456-7890
+LINKEDIN: linkedin.com/in/username
+GITHUB: github.com/username
+
+EDUCATION:
+School: University Name
+Location: City, State
+Degree: Degree Name
+Dates: Date Range
+
+EXPERIENCE:
+Role: Job Title
+Company: Company Name
+Location: City, State
+Dates: Date Range
+- Bullet point text here
+- Another bullet point
+
+PROJECT:
+Name: Project Name
+Tech: Technology Stack
+Dates: Dates
+- Description or achievement
+- Another description
+
+LANGUAGES: Language1, Language2, Language3
+FRAMEWORKS: Framework1, Framework2
+TOOLS: Tool1, Tool2
+LIBRARIES: Library1, Library2
 
 RESUME:
 {data.master_latex}
@@ -479,51 +603,20 @@ RESUME:
 JOB DESCRIPTION:
 {data.job_description}
 
-Extract ALL resume data into this exact JSON structure:
-{{
-  "name": "full name from resume header",
-  "email": "first email address found",
-  "phone": "phone number or empty string",
-  "linkedin": "linkedin URL or empty string",
-  "github": "github URL or empty string",
-  "education": [
-    {{"school": "university name", "location": "city, state", "degree": "degree name", "dates": "date range"}}
-  ],
-  "experience": [
-    {{"role": "job title", "company": "company name", "location": "city, state", "dates": "date range", "bullets": ["full bullet text", "another bullet"]}}
-  ],
-  "projects": [
-    {{"name": "project name", "tech": "technologies or stack", "dates": "dates", "bullets": ["description", "another description"]}}
-  ],
-  "skills": {{
-    "languages": "comma separated language list",
-    "frameworks": "comma separated frameworks",
-    "tools": "comma separated tools",
-    "libraries": "comma separated libraries"
-  }}
-}}
-
-CRITICAL RULES:
-1. Extract text EXACTLY as it appears - do NOT modify, rephrase, or fabricate
-2. Keep LaTeX formatting in bullet text
-3. Use empty strings "" for missing fields
-4. Return ONLY the JSON object - no markdown, no explanation, no extra text
-5. All arrays should contain ALL items from the resume, not a subset
-6. Each bullet, project description, and skill should be the exact text from the resume
-"""
+Extract ALL details from the resume exactly as written. Use empty lines to separate sections. For missing fields, skip that line entirely."""
 
     try:
         ai_text = await call_anthropic(prompt, data.temperature, data.max_tokens)
         
-        parsed = try_extract_json(ai_text)
-        if not parsed:
-            print(f"❌ JSON Parse Failed. AI Response:\n{ai_text[:500]}\n")  # Log first 500 chars
+        parsed = parse_extracted_resume(ai_text)
+        
+        if not parsed.get("name"):
+            print(f"⚠️  No name extracted. AI Response:\n{ai_text[:500]}\n")
             # Fallback: try to extract at least the name from the LaTeX
             import re
             name_match = re.search(r'\\scshape\s+([^\\]+)', data.master_latex)
             fallback_name = name_match.group(1).strip() if name_match else "Your Name"
-            print(f"Using fallback name: {fallback_name}")
-            parsed = {"name": fallback_name}
+            parsed["name"] = fallback_name
 
         # Validate and clean the data structure
         resume_data = {
