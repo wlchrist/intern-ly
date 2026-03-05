@@ -138,17 +138,23 @@ def build_output_text(data: dict) -> str:
 def build_base_template_latex(data: dict) -> str:
     """Build the Jake Ryan resume template with tailored content"""
     
-    # Extract contact info with defaults
+    # Extract contact info
     name = escape_latex_text(data.get("name", "Your Name"))
-    phone = escape_latex_text(data.get("phone", "123-456-7890"))
-    email = escape_latex_text(data.get("email", "email@example.com"))
-    linkedin = escape_latex_text(data.get("linkedin", "linkedin.com/in/yourprofile"))
-    github = escape_latex_text(data.get("github", "github.com/yourusername"))
+    phone = escape_latex_text(data.get("phone", ""))
+    email = escape_latex_text(data.get("email", ""))
+    linkedin = escape_latex_text(data.get("linkedin", ""))
+    github = escape_latex_text(data.get("github", ""))
+    
+    # Build contact line - only include non-empty fields
+    contact_parts = [phone, f"\\href{{mailto:{email}}}{{\\underline{{{email}}}}}" if email else None, 
+                    f"\\href{{https://{linkedin}}}{{\\underline{{{linkedin}}}}}" if linkedin else None,
+                    f"\\href{{https://{github}}}{{\\underline{{{github}}}}}" if github else None]
+    contact_line = " $|$ ".join([p for p in contact_parts if p]) or "Add contact info"
     
     # Build education section
     education_entries = data.get("education", [])
     education_latex = []
-    for edu in education_entries[:2]:  # Limit to 2 entries
+    for edu in education_entries[:2]:
         school = escape_latex_text(edu.get("school", ""))
         location = escape_latex_text(edu.get("location", ""))
         degree = escape_latex_text(edu.get("degree", ""))
@@ -160,15 +166,12 @@ def build_base_template_latex(data: dict) -> str:
                 f"      {{{degree}}}{{{dates}}}"
             )
     
-    education_section = "\n".join(education_latex) if education_latex else \
-        "    \\resumeSubheading\n" \
-        "      {Your University}{City, State}\n" \
-        "      {Degree Program}{Expected Graduation Date}"
+    education_section = "\n".join(education_latex) if education_latex else ""
     
     # Build experience section
     experience_entries = data.get("experience", [])
     experience_latex = []
-    for exp in experience_entries[:3]:  # Limit to 3 entries
+    for exp in experience_entries[:3]:
         role = escape_latex_text(exp.get("role", ""))
         dates = escape_latex_text(exp.get("dates", ""))
         company = escape_latex_text(exp.get("company", ""))
@@ -183,56 +186,53 @@ def build_base_template_latex(data: dict) -> str:
             ]
             if bullets:
                 exp_block.append("      \\resumeItemListStart")
-                for bullet in bullets[:5]:  # Limit to 5 bullets per role
+                for bullet in bullets[:5]:
                     exp_block.append(f"        \\resumeItem{{{escape_latex_text(bullet)}}}")
                 exp_block.append("      \\resumeItemListEnd")
             experience_latex.append("\n".join(exp_block))
     
-    experience_section = "\n\n".join(experience_latex) if experience_latex else \
-        "    \\resumeSubheading\n" \
-        "      {Your Role}{Dates}\n" \
-        "      {Company Name}{Location}\n" \
-        "      \\resumeItemListStart\n" \
-        "        \\resumeItem{Add your experience bullets here}\n" \
-        "      \\resumeItemListEnd"
+    experience_section = "\n\n".join(experience_latex) if experience_latex else ""
     
     # Build projects section
     projects = data.get("projects", [])
     projects_latex = []
-    for proj in projects[:2]:  # Limit to 2 projects
-        name = escape_latex_text(proj.get("name", ""))
+    for proj in projects[:2]:
+        proj_name = escape_latex_text(proj.get("name", ""))
         tech = escape_latex_text(proj.get("tech", ""))
-        dates = escape_latex_text(proj.get("dates", ""))
+        proj_dates = escape_latex_text(proj.get("dates", ""))
         bullets = proj.get("bullets", [])
         
-        if name:
+        if proj_name:
             proj_block = [
                 f"      \\resumeProjectHeading\n"
-                f"          {{\\textbf{{{name}}} $|$ \\emph{{{tech}}}}}{{{dates}}}"
+                f"          {{\\textbf{{{proj_name}}} $|$ \\emph{{{tech}}}}}{{{proj_dates}}}"
             ]
             if bullets:
                 proj_block.append("          \\resumeItemListStart")
-                for bullet in bullets[:4]:  # Limit to 4 bullets per project
+                for bullet in bullets[:4]:
                     proj_block.append(f"            \\resumeItem{{{escape_latex_text(bullet)}}}")
                 proj_block.append("          \\resumeItemListEnd")
             projects_latex.append("\n".join(proj_block))
     
-    projects_section = "\n".join(projects_latex) if projects_latex else \
-        "      \\resumeProjectHeading\n" \
-        "          {\\textbf{Project Name} $|$ \\emph{Technologies}}{Date}\n" \
-        "          \\resumeItemListStart\n" \
-        "            \\resumeItem{Add your project description}\n" \
-        "          \\resumeItemListEnd"
+    projects_section = "\n".join(projects_latex) if projects_latex else ""
     
     # Build technical skills section
     skills_data = data.get("skills", {})
-    languages = escape_latex_text(skills_data.get("languages", "Add languages"))
-    frameworks = escape_latex_text(skills_data.get("frameworks", "Add frameworks"))
-    tools = escape_latex_text(skills_data.get("tools", "Add developer tools"))
-    libraries = escape_latex_text(skills_data.get("libraries", "Add libraries"))
+    skills_lines = []
     
-    # Return full template
-    return f"""\\documentclass[letterpaper,11pt]{{article}}
+    if skills_data.get("languages"):
+        skills_lines.append(f"     \\textbf{{Languages}}{{: {escape_latex_text(skills_data['languages'])}}} \\\\")
+    if skills_data.get("frameworks"):
+        skills_lines.append(f"     \\textbf{{Frameworks}}{{: {escape_latex_text(skills_data['frameworks'])}}} \\\\")
+    if skills_data.get("tools"):
+        skills_lines.append(f"     \\textbf{{Developer Tools}}{{: {escape_latex_text(skills_data['tools'])}}} \\\\")
+    if skills_data.get("libraries"):
+        skills_lines.append(f"     \\textbf{{Libraries}}{{: {escape_latex_text(skills_data['libraries'])}}}")
+    
+    skills_section = "\n".join(skills_lines)
+    
+    # Build the final template
+    result = f"""\\documentclass[letterpaper,11pt]{{article}}
 
 \\usepackage{{latexsym}}
 \\usepackage[empty]{{fullpage}}
@@ -312,38 +312,48 @@ def build_base_template_latex(data: dict) -> str:
 
 \\begin{{center}}
     \\textbf{{\\Huge \\scshape {name}}} \\\\ \\vspace{{1pt}}
-    \\small {phone} $|$ \\href{{mailto:{email}}}{{\\underline{{{email}}}}} $|$ 
-    \\href{{https://{linkedin}}}{{\\underline{{{linkedin}}}}} $|$
-    \\href{{https://{github}}}{{\\underline{{{github}}}}}
+    \\small {contact_line}
 \\end{{center}}
-
+"""
+    
+    if education_section:
+        result += f"""
 \\section{{Education}}
   \\resumeSubHeadingListStart
 {education_section}
   \\resumeSubHeadingListEnd
-
+"""
+    
+    if experience_section:
+        result += f"""
 \\section{{Experience}}
   \\resumeSubHeadingListStart
 {experience_section}
   \\resumeSubHeadingListEnd
-
+"""
+    
+    if projects_section:
+        result += f"""
 \\section{{Projects}}
     \\resumeSubHeadingListStart
 {projects_section}
     \\resumeSubHeadingListEnd
-
+"""
+    
+    if skills_section:
+        result += f"""
 \\section{{Technical Skills}}
  \\begin{{itemize}}[leftmargin=0.15in, label={{}}]
     \\small{{\\item{{
-     \\textbf{{Languages}}{{: {languages}}} \\\\
-     \\textbf{{Frameworks}}{{: {frameworks}}} \\\\
-     \\textbf{{Developer Tools}}{{: {tools}}} \\\\
-     \\textbf{{Libraries}}{{: {libraries}}}
+{skills_section}
     }}}}
  \\end{{itemize}}
-
-\\end{{document}}
 """
+    
+    result += """
+\\end{document}
+"""
+    return result
 
 
 def try_extract_json(raw: str) -> dict | None:
@@ -461,91 +471,74 @@ async def tailor_resume(request: Request, data: TailorRequest):
     if not data.job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
-    prompt = f"""You are an expert resume strategist who extracts and tailors resume content.
+    prompt = f"""Extract and tailor this resume for the job description.
 
-TASK:
-1) Parse the candidate's master LaTeX resume to extract ALL structured information
-2) Compare it against the job description
-3) Select only the most relevant experience bullets, projects, and skills
-4) Rewrite selected bullets for impact while keeping facts strictly unchanged
-
-HARD RULES:
-- Never add new facts, employers, degrees, dates, tools, metrics, or responsibilities
-- Extract name, contact info, education, experience, projects exactly as written
-- You may reorder and rephrase experience bullets for relevance
-- Keep bullets concise and results-oriented
-- Select 2-3 most relevant experience roles (3-5 bullets each)
-- Select 1-2 most relevant projects (2-4 bullets each)
-- Categorize skills into: languages, frameworks, tools, libraries
-
-Return ONLY strict JSON matching this schema:
-{{
-  "name": "Full Name",
-  "email": "email@example.com",
-  "phone": "123-456-7890",
-  "linkedin": "linkedin.com/in/username",
-  "github": "github.com/username",
-  "education": [
-    {{
-      "school": "University Name",
-      "location": "City, ST",
-      "degree": "Bachelor of Science in Computer Science",
-      "dates": "Aug. 2020 -- May 2024"
-    }}
-  ],
-  "experience": [
-    {{
-      "role": "Software Engineering Intern",
-      "company": "Company Name",
-      "location": "City, ST",
-      "dates": "June 2023 -- Aug. 2023",
-      "bullets": ["Achievement 1", "Achievement 2"]
-    }}
-  ],
-  "projects": [
-    {{
-      "name": "Project Name",
-      "tech": "Python, React, PostgreSQL",
-      "dates": "Jan. 2023 -- Present",
-      "bullets": ["Description 1", "Description 2"]
-    }}
-  ],
-  "skills": {{
-    "languages": "Python, Java, JavaScript, C++",
-    "frameworks": "React, Flask, Node.js",
-    "tools": "Git, Docker, VS Code",
-    "libraries": "pandas, NumPy, scikit-learn"
-  }}
-}}
+RESUME:
+{data.master_latex}
 
 JOB DESCRIPTION:
 {data.job_description}
 
-MASTER RESUME (LATEX):
-{data.master_latex}
+Instructions:
+1. Extract ALL contact info visible (name, email, phone, linkedin, github)
+2. Extract ALL education entries as-is
+3. Extract ALL experience + project bullets exactly as written
+4. Reorder/select most relevant for the job (no fabrication)
+5. Extract skills and categorize them
+
+Return ONLY valid JSON:
+{{
+  "name": "extracted name",
+  "email": "extracted email or empty string",
+  "phone": "extracted phone or empty string",
+  "linkedin": "extracted linkedin or empty string",
+  "github": "extracted github or empty string",
+  "education": [
+    {{"school": "school name", "location": "location", "degree": "degree", "dates": "dates"}}
+  ],
+  "experience": [
+    {{"role": "role", "company": "company", "location": "location", "dates": "dates", "bullets": ["bullet 1", "bullet 2"]}}
+  ],
+  "projects": [
+    {{"name": "name", "tech": "tech", "dates": "dates", "bullets": ["bullet 1"]}}
+  ],
+  "skills": {{
+    "languages": "comma separated",
+    "frameworks": "comma separated",
+    "tools": "comma separated",
+    "libraries": "comma separated"
+  }}
+}}
 """
 
     try:
         ai_text = await call_anthropic(prompt, data.temperature, data.max_tokens)
+        print(f"AI Response:\n{ai_text}\n")  # Debug logging
+        
         parsed = try_extract_json(ai_text)
         if not parsed:
-            raise HTTPException(status_code=500, detail="Could not parse AI output")
+            print("Failed to parse JSON from AI response")
+            # Fallback: try to extract at least the name from the LaTeX
+            import re
+            name_match = re.search(r'\\scshape\s+([^\\]+)', data.master_latex)
+            fallback_name = name_match.group(1).strip() if name_match else "Your Name"
+            parsed = {"name": fallback_name}
 
         # Validate and clean the data structure
         resume_data = {
-            "name": parsed.get("name", "Your Name"),
-            "email": parsed.get("email", "email@example.com"),
-            "phone": parsed.get("phone", "123-456-7890"),
-            "linkedin": parsed.get("linkedin", "linkedin.com/in/yourprofile"),
-            "github": parsed.get("github", "github.com/yourusername"),
+            "name": str(parsed.get("name", "")).strip() or "Your Name",
+            "email": str(parsed.get("email", "")).strip() or "",
+            "phone": str(parsed.get("phone", "")).strip() or "",
+            "linkedin": str(parsed.get("linkedin", "")).strip() or "",
+            "github": str(parsed.get("github", "")).strip() or "",
             "education": [],
             "experience": [],
             "projects": [],
             "skills": {}
         }
         
-        # Clean education
-        if isinstance(parsed.get("education"), list):
+        # Clean education - keep empty if not provided
+        if isinstance(parsed.get("education"), list) and len(parsed["education"]) > 0:
             for edu in parsed["education"][:2]:
                 if isinstance(edu, dict) and edu.get("school"):
                     resume_data["education"].append({
@@ -556,28 +549,30 @@ MASTER RESUME (LATEX):
                     })
         
         # Clean experience
-        if isinstance(parsed.get("experience"), list):
+        if isinstance(parsed.get("experience"), list) and len(parsed["experience"]) > 0:
             for exp in parsed["experience"][:3]:
-                if isinstance(exp, dict) and exp.get("role"):
+                if isinstance(exp, dict) and exp.get("role") and exp.get("company"):
                     bullets = []
                     if isinstance(exp.get("bullets"), list):
-                        bullets = [str(b).strip() for b in exp["bullets"] if isinstance(b, str) and len(str(b).strip()) > 10][:5]
+                        # Accept bullets even if short, since they're from the source
+                        bullets = [str(b).strip() for b in exp["bullets"] if isinstance(b, str) and len(str(b).strip()) > 5][:5]
                     
-                    resume_data["experience"].append({
-                        "role": str(exp.get("role", "")).strip(),
-                        "company": str(exp.get("company", "")).strip(),
-                        "location": str(exp.get("location", "")).strip(),
-                        "dates": str(exp.get("dates", "")).strip(),
-                        "bullets": bullets
-                    })
+                    if bullets or exp.get("role"):  # Include even if no bullets
+                        resume_data["experience"].append({
+                            "role": str(exp.get("role", "")).strip(),
+                            "company": str(exp.get("company", "")).strip(),
+                            "location": str(exp.get("location", "")).strip(),
+                            "dates": str(exp.get("dates", "")).strip(),
+                            "bullets": bullets
+                        })
         
         # Clean projects
-        if isinstance(parsed.get("projects"), list):
+        if isinstance(parsed.get("projects"), list) and len(parsed["projects"]) > 0:
             for proj in parsed["projects"][:2]:
                 if isinstance(proj, dict) and proj.get("name"):
                     bullets = []
                     if isinstance(proj.get("bullets"), list):
-                        bullets = [str(b).strip() for b in proj["bullets"] if isinstance(b, str) and len(str(b).strip()) > 10][:4]
+                        bullets = [str(b).strip() for b in proj["bullets"] if isinstance(b, str) and len(str(b).strip()) > 5][:4]
                     
                     resume_data["projects"].append({
                         "name": str(proj.get("name", "")).strip(),
@@ -586,14 +581,14 @@ MASTER RESUME (LATEX):
                         "bullets": bullets
                     })
         
-        # Clean skills
+        # Clean skills - only include if actually present
         if isinstance(parsed.get("skills"), dict):
             skills = parsed["skills"]
             resume_data["skills"] = {
-                "languages": str(skills.get("languages", "")).strip() or "Add languages",
-                "frameworks": str(skills.get("frameworks", "")).strip() or "Add frameworks",
-                "tools": str(skills.get("tools", "")).strip() or "Add tools",
-                "libraries": str(skills.get("libraries", "")).strip() or "Add libraries"
+                "languages": str(skills.get("languages", "")).strip(),
+                "frameworks": str(skills.get("frameworks", "")).strip(),
+                "tools": str(skills.get("tools", "")).strip(),
+                "libraries": str(skills.get("libraries", "")).strip()
             }
 
         output = build_output_text(resume_data)
