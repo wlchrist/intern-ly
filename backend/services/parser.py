@@ -50,12 +50,12 @@ Return ONLY valid JSON in this exact format:
         "highlights": ["What you built", "Impact or outcome"]
       }}
     ],
-    "skills": {
+    "skills": {{
       "languages": ["Python", "JavaScript"],
       "frameworks": ["FastAPI", "React"],
       "developer_tools": ["Git", "Docker"],
       "libraries": ["NumPy"]
-    }
+    }}
   }}
 }}
 
