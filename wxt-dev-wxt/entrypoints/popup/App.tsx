@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import './App.css';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -53,6 +53,59 @@ function App() {
   const [error, setError] = useState('');
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Load persisted data from storage when component mounts
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local
+        .get(['internly_master_resume', 'internly_job_description', 'internly_file_name'])
+        .then((result) => {
+          if (result.internly_master_resume) {
+            setMasterResume(result.internly_master_resume);
+          }
+          if (result.internly_job_description) {
+            setJobDescription(result.internly_job_description);
+          }
+          if (result.internly_file_name) {
+            setFileName(result.internly_file_name);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }, []);
+
+  // Save masterResume to storage whenever it changes
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local && masterResume) {
+      chrome.storage.local
+        .set({
+          internly_master_resume: masterResume,
+        })
+        .catch(() => undefined);
+    }
+  }, [masterResume]);
+
+  // Save jobDescription to storage whenever it changes
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local && jobDescription) {
+      chrome.storage.local
+        .set({
+          internly_job_description: jobDescription,
+        })
+        .catch(() => undefined);
+    }
+  }, [jobDescription]);
+
+  // Save fileName to storage whenever it changes
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local && fileName) {
+      chrome.storage.local
+        .set({
+          internly_file_name: fileName,
+        })
+        .catch(() => undefined);
+    }
+  }, [fileName]);
 
   const isReady = useMemo(
     () => masterResume.trim().length > 0 && jobDescription.trim().length > 0,
