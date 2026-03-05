@@ -525,6 +525,18 @@ def parse_markdown_sections(markdown_text: str) -> dict:
 
     current_section: str | None = None
 
+    def clean_markdown(text: str) -> str:
+        """Remove markdown formatting characters (bold, italic, underscores)"""
+        # Remove **bold** → bold
+        text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+        # Remove *italic* → italic
+        text = re.sub(r"\*(.+?)\*", r"\1", text)
+        # Remove _underscores_ → underscores (but keep numbers like _2023_)
+        text = re.sub(r"_(.+?)_", r"\1", text)
+        # Clean trailing markdown asterisks
+        text = text.replace("**", "").replace("*", "").replace("__", "").replace("_", "")
+        return text.strip()
+
     for raw_line in markdown_text.splitlines():
         line = raw_line.strip()
         if not line:
@@ -547,7 +559,10 @@ def parse_markdown_sections(markdown_text: str) -> dict:
         if current_section is None:
             continue
 
+        # Remove bullet markers
         normalized = re.sub(r"^[-*]\s+", "", line)
+        # Clean markdown formatting
+        normalized = clean_markdown(normalized)
         if normalized:
             sections[current_section].append(normalized)
 
