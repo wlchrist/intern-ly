@@ -1,8 +1,0 @@
-[build]
-services = ["wget", "curl"]
-
-[build.nix]
-packages = [
-  "pkgs.texlive.combined.scheme-basic",
-  "pkgs.python311",
-]
