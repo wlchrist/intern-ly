@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import './App.css';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
@@ -53,12 +53,19 @@ function App() {
   const [error, setError] = useState('');
   const [hasGenerated, setHasGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const hasAutoResumedRef = useRef(false);
 
   // Load persisted data from storage when component mounts
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       chrome.storage.local
-        .get(['internly_master_resume', 'internly_job_description', 'internly_file_name'])
+        .get([
+          'internly_master_resume',
+          'internly_job_description',
+          'internly_file_name',
+          'internly_is_generating',
+          'internly_has_generated',
+        ])
         .then((result) => {
           if (result.internly_master_resume) {
             setMasterResume(result.internly_master_resume);
@@ -68,6 +75,12 @@ function App() {
           }
           if (result.internly_file_name) {
             setFileName(result.internly_file_name);
+          }
+          if (result.internly_is_generating) {
+            setIsGenerating(true);
+          }
+          if (result.internly_has_generated) {
+            setHasGenerated(true);
           }
         })
         .catch(() => undefined);
@@ -106,6 +119,54 @@ function App() {
         .catch(() => undefined);
     }
   }, [fileName]);
+
+  // Save isGenerating state to storage
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local
+        .set({
+          internly_is_generating: isGenerating,
+        })
+        .catch(() => undefined);
+    }
+  }, [isGenerating]);
+
+  // Save hasGenerated state to storage
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local
+        .set({
+          internly_has_generated: hasGenerated,
+        })
+        .catch(() => undefined);
+    }
+  }, [hasGenerated]);
+
+  // If generation was in progress when popup closed, resume it
+  useEffect(() => {
+    const resumeGeneration = async () => {
+      // Only auto-resume once per mount
+      if (hasAutoResumedRef.current) {
+        return;
+      }
+
+      if (isGenerating && masterResume && jobDescription) {
+        hasAutoResumedRef.current = true;
+        try {
+          const tailoredPdf = await tailorResumeWithAi(masterResume, jobDescription);
+          setGeneratedPdf(tailoredPdf);
+          setHasGenerated(true);
+          setIsGenerating(false);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Unknown error';
+          setError(`AI tailoring failed: ${message}`);
+          setIsGenerating(false);
+        }
+      }
+    };
+
+    resumeGeneration();
+  }, [isGenerating, masterResume, jobDescription]);
 
   const isReady = useMemo(
     () => masterResume.trim().length > 0 && jobDescription.trim().length > 0,
