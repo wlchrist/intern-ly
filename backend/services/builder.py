@@ -10,9 +10,14 @@ def format_line(value: str, length: int = 100) -> str:
 
 
 def escape_latex(text: str) -> str:
-    """Escape special LaTeX characters"""
+    """Escape special LaTeX characters and truncate long text"""
     if not text:
         return ""
+    # Truncate very long items to prevent overflow
+    max_len = 80
+    if len(text) > max_len:
+        text = text[:max_len] + "..."
+    
     replacements = {
         "_": "\\_",
         "&": "\\&",
@@ -199,16 +204,16 @@ def build_resume_latex(resume: ResumeJSON) -> str:
         skill_lines = []
         if resume.sections.skills.languages:
             langs = ", ".join(escape_latex(s) for s in resume.sections.skills.languages)
-            skill_lines.append(f"     \\textbf{{Languages}}{{: {langs}}} \\\\")
+            skill_lines.append(f"     \\textbf{{Languages}}: {langs} \\\\")
         if resume.sections.skills.frameworks:
             frameworks = ", ".join(escape_latex(s) for s in resume.sections.skills.frameworks)
-            skill_lines.append(f"     \\textbf{{Frameworks}}{{: {frameworks}}} \\\\")
+            skill_lines.append(f"     \\textbf{{Frameworks}}: {frameworks} \\\\")
         if resume.sections.skills.developer_tools:
             tools = ", ".join(escape_latex(s) for s in resume.sections.skills.developer_tools)
-            skill_lines.append(f"     \\textbf{{Developer Tools}}{{: {tools}}} \\\\")
+            skill_lines.append(f"     \\textbf{{Developer Tools}}: {tools} \\\\")
         if resume.sections.skills.libraries:
             libraries = ", ".join(escape_latex(s) for s in resume.sections.skills.libraries)
-            skill_lines.append(f"     \\textbf{{Libraries}}{{: {libraries}}}")
+            skill_lines.append(f"     \\textbf{{Libraries}}: {libraries}")
         
         latex += "\n".join(skill_lines)
         latex += r"""
