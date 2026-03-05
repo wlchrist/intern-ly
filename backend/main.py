@@ -379,8 +379,61 @@ def parse_extracted_resume(text: str) -> dict:
         if not line:
             continue
             
-        # Parse key-value pairs
-        if line.startswith("NAME:"):
+        # Check for section headers first
+        if line.startswith("EDUCATION:"):
+            # Save previous entry if exists
+            if current_entry and current_section == "experience":
+                if current_entry.get("role"):
+                    data["experience"].append(current_entry)
+            elif current_entry and current_section == "projects":
+                if current_entry.get("name"):
+                    data["projects"].append(current_entry)
+            
+            current_section = "education"
+            current_entry = {"school": "", "location": "", "degree": "", "dates": ""}
+        elif line.startswith("EXPERIENCE:"):
+            # Save previous entry if exists
+            if current_entry and current_section == "education":
+                if current_entry.get("school"):
+                    data["education"].append(current_entry)
+            elif current_entry and current_section == "projects":
+                if current_entry.get("name"):
+                    data["projects"].append(current_entry)
+                    
+            current_section = "experience"
+            current_entry = {"role": "", "company": "", "location": "", "dates": "", "bullets": []}
+        elif line.startswith("PROJECT:"):
+            # Save previous entry if exists
+            if current_entry and current_section == "experience":
+                if current_entry.get("role"):
+                    data["experience"].append(current_entry)
+            elif current_entry and current_section == "education":
+                if current_entry.get("school"):
+                    data["education"].append(current_entry)
+                    
+            current_section = "projects"
+            current_entry = {"name": "", "tech": "", "dates": "", "bullets": []}
+        elif line.startswith("LANGUAGES:"):
+            # Save previous entry if exists
+            if current_entry and current_section == "experience":
+                if current_entry.get("role"):
+                    data["experience"].append(current_entry)
+            elif current_entry and current_section == "projects":
+                if current_entry.get("name"):
+                    data["projects"].append(current_entry)
+            
+            current_section = None
+            current_entry = None
+            data["skills"]["languages"] = line.replace("LANGUAGES:", "").strip()
+        elif line.startswith("FRAMEWORKS:"):
+            data["skills"]["frameworks"] = line.replace("FRAMEWORKS:", "").strip()
+        elif line.startswith("TOOLS:"):
+            data["skills"]["tools"] = line.replace("TOOLS:", "").strip()
+        elif line.startswith("LIBRARIES:"):
+            data["skills"]["libraries"] = line.replace("LIBRARIES:", "").strip()
+        
+        # Parse by section
+        elif line.startswith("NAME:"):
             data["name"] = line.replace("NAME:", "").strip()
         elif line.startswith("EMAIL:"):
             data["email"] = line.replace("EMAIL:", "").strip()
@@ -390,24 +443,7 @@ def parse_extracted_resume(text: str) -> dict:
             data["linkedin"] = line.replace("LINKEDIN:", "").strip()
         elif line.startswith("GITHUB:"):
             data["github"] = line.replace("GITHUB:", "").strip()
-        elif line.startswith("LANGUAGES:"):
-            data["skills"]["languages"] = line.replace("LANGUAGES:", "").strip()
-        elif line.startswith("FRAMEWORKS:"):
-            data["skills"]["frameworks"] = line.replace("FRAMEWORKS:", "").strip()
-        elif line.startswith("TOOLS:"):
-            data["skills"]["tools"] = line.replace("TOOLS:", "").strip()
-        elif line.startswith("LIBRARIES:"):
-            data["skills"]["libraries"] = line.replace("LIBRARIES:", "").strip()
-        elif line.startswith("EDUCATION:"):
-            current_entry = {"school": "", "location": "", "degree": "", "dates": ""}
-            current_section = "education"
-        elif line.startswith("EXPERIENCE:"):
-            current_entry = {"role": "", "company": "", "location": "", "dates": "", "bullets": []}
-            current_section = "experience"
-        elif line.startswith("PROJECT:"):
-            current_entry = {"name": "", "tech": "", "dates": "", "bullets": []}
-            current_section = "projects"
-        elif current_section == "education":
+        elif current_section == "education" and current_entry:
             if line.startswith("School:"):
                 current_entry["school"] = line.replace("School:", "").strip()
             elif line.startswith("Location:"):
@@ -417,8 +453,8 @@ def parse_extracted_resume(text: str) -> dict:
             elif line.startswith("Dates:"):
                 current_entry["dates"] = line.replace("Dates:", "").strip()
                 data["education"].append(current_entry)
-                current_entry = None
-        elif current_section == "experience":
+                current_entry = {"school": "", "location": "", "degree": "", "dates": ""}
+        elif current_section == "experience" and current_entry:
             if line.startswith("Role:"):
                 current_entry["role"] = line.replace("Role:", "").strip()
             elif line.startswith("Company:"):
@@ -429,25 +465,24 @@ def parse_extracted_resume(text: str) -> dict:
                 current_entry["dates"] = line.replace("Dates:", "").strip()
             elif line.startswith("- "):
                 current_entry["bullets"].append(line[2:])
-            elif line.startswith("EDUCATION:") or line.startswith("PROJECT:"):
-                if current_entry and current_entry.get("role"):
-                    data["experience"].append(current_entry)
-                current_entry = None
-                current_section = None
-        elif current_section == "projects":
+            elif line.startswith("--") or (line and not line.startswith("-") and any(x in line for x in [":", "EDUCATION", "PROJECT", "LANGUAGES"])):
+                # This might be a new entry or role line
+                if ":" in line and current_entry.get("role"):
+                    # Save current and start new
+                    if current_entry["role"]:
+                        data["experience"].append(current_entry)
+                    current_entry = {"role": "", "company": "", "location": "", "dates": "", "bullets": []}
+        elif current_section == "projects" and current_entry:
             if line.startswith("Name:"):
                 current_entry["name"] = line.replace("Name:", "").strip()
             elif line.startswith("Tech:"):
                 current_entry["tech"] = line.replace("Tech:", "").strip()
             elif line.startswith("Dates:"):
                 current_entry["dates"] = line.replace("Dates:", "").strip()
+                data["projects"].append(current_entry)
+                current_entry = {"name": "", "tech": "", "dates": "", "bullets": []}
             elif line.startswith("- "):
                 current_entry["bullets"].append(line[2:])
-            elif line.startswith("EDUCATION:") or line.startswith("EXPERIENCE:"):
-                if current_entry and current_entry.get("name"):
-                    data["projects"].append(current_entry)
-                current_entry = None
-                current_section = None
     
     # Append last entry if exists
     if current_entry:
@@ -563,47 +598,48 @@ async def tailor_resume(request: Request, data: TailorRequest):
     if not data.job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is required")
 
-    prompt = f"""Extract resume data from the LaTeX. Return ONLY the extracted data in this format (no JSON, no markdown, no explanation):
+    prompt = f"""Extract ALL resume sections. Output ONLY in this format:
 
-NAME: Full Name Here
-EMAIL: email@example.com
-PHONE: 123-456-7890
-LINKEDIN: linkedin.com/in/username
-GITHUB: github.com/username
+NAME: Full name
+EMAIL: email address
+PHONE: phone number
+LINKEDIN: linkedin URL
+GITHUB: github URL
 
 EDUCATION:
-School: University Name
-Location: City, State
-Degree: Degree Name
-Dates: Date Range
+School: university name
+Location: city, state
+Degree: degree name
+Dates: date range
 
 EXPERIENCE:
-Role: Job Title
-Company: Company Name
-Location: City, State
-Dates: Date Range
-- Bullet point text here
-- Another bullet point
+Role: job title
+Company: company name
+Location: city, state
+Dates: date range
+- bullet point 1
+- bullet point 2
+- bullet point 3
 
 PROJECT:
-Name: Project Name
-Tech: Technology Stack
-Dates: Dates
-- Description or achievement
-- Another description
+Name: project name
+Tech: technology stack
+Dates: dates
+- description 1
+- description 2
 
-LANGUAGES: Language1, Language2, Language3
-FRAMEWORKS: Framework1, Framework2
-TOOLS: Tool1, Tool2
-LIBRARIES: Library1, Library2
+LANGUAGES: lang1, lang2, lang3
+FRAMEWORKS: framework1, framework2
+TOOLS: tool1, tool2, tool3
+LIBRARIES: lib1, lib2
 
-RESUME:
+Resume to extract:
 {data.master_latex}
 
-JOB DESCRIPTION:
+Job description (for context):
 {data.job_description}
 
-Extract ALL details from the resume exactly as written. Use empty lines to separate sections. For missing fields, skip that line entirely."""
+Extract EVERYTHING from the resume. Include ALL experience entries, ALL projects, and ALL skills. Keep text exactly as written."""
 
     try:
         ai_text = await call_anthropic(prompt, data.temperature, data.max_tokens)
