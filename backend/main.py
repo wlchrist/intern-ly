@@ -503,13 +503,17 @@ def parse_extracted_resume(text: str) -> dict:
 
 
 def extract_fallback_name(content: str) -> str:
-    latex_name_match = re.search(r'\\scshape\s+([^\\]+)', content)
+    latex_name_match = re.search(r'\\scshape\s+([^\\}]+)', content)
     if latex_name_match:
-        return latex_name_match.group(1).strip()
+        name = latex_name_match.group(1).strip()
+        # Clean up any trailing braces or LaTeX formatting
+        name = name.rstrip('}')
+        return name
 
     lines = [line.strip() for line in content.splitlines() if line.strip()]
     for line in lines[:12]:
-        if len(line) > 2 and len(line.split()) <= 4 and "@" not in line and "section" not in line.lower():
+        # Skip lines with braces or section markers
+        if len(line) > 2 and len(line.split()) <= 4 and "@" not in line and "section" not in line.lower() and "{" not in line and "}" not in line:
             return line
 
     return "Your Name"
@@ -640,20 +644,61 @@ def build_pdf_bytes(contact: dict, sections: dict) -> bytes:
 
     pdf.setTitle("tailored_resume")
     pdf.setFont("Times-Bold", 30)
-    pdf.drawCentredString(width / 2, y, contact.get("name") or "Your Name")
+    name = contact.get("name") or "Your Name"
+    # Clean any remaining braces from name
+    name = name.strip('{}')
+    pdf.drawCentredString(width / 2, y, name)
     y -= 24
 
+    # Build contact info with better wrapping for long URLs
     contact_bits = [
-        contact.get("phone", ""),
         contact.get("email", ""),
-        contact.get("linkedin", ""),
-        contact.get("github", ""),
+        contact.get("phone", ""),
     ]
     contact_text = " | ".join([item for item in contact_bits if item])
-    if contact_text:
-        pdf.setFont("Times-Roman", 11)
-        pdf.drawCentredString(width / 2, y, contact_text)
-        y -= 22
+    
+    # Add URLs on separate line if they exist
+    urls = []
+    if contact.get("linkedin"):
+        urls.append(contact["linkedin"])
+    if contact.get("github"):
+        urls.append(contact["github"])
+    urls_text = " | ".join(urls) if urls else ""
+    
+    if contact_text or urls_text:
+        pdf.setFont("Times-Roman", 10)
+        if contact_text:
+            pdf.drawCentredString(width / 2, y, contact_text)
+            y -= 14
+        if urls_text:
+            # Wrap URL line if needed
+            font_name = "Times-Roman"
+            font_size = 9
+            target_width = right_margin - left_margin
+            
+            words = urls_text.split()
+            if pdf.stringWidth(urls_text, font_name, font_size) > target_width:
+                # Wrap the URLs
+                current = words[0]
+                url_lines = []
+                for word in words[1:]:
+                    candidate = f"{current} {word}"
+                    if pdf.stringWidth(candidate, font_name, font_size) <= target_width:
+                        current = candidate
+                    else:
+                        url_lines.append(current)
+                        current = word
+                url_lines.append(current)
+                
+                for line in url_lines:
+                    pdf.setFont(font_name, font_size)
+                    pdf.drawCentredString(width / 2, y, line)
+                    y -= 12
+            else:
+                pdf.setFont(font_name, font_size)
+                pdf.drawCentredString(width / 2, y, urls_text)
+                y -= 12
+        y -= 10
 
     ordered_sections = [
         ("Education", "education"),
