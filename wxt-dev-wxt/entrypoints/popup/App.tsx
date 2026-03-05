@@ -124,6 +124,7 @@ async function tailorResumeWithAi(masterResume: string, jobDescription: string):
     },
     body: JSON.stringify({
       master_resume: masterResume,
+      master_latex: masterResume,
       job_description: jobDescription,
       temperature: 0.2,
       max_tokens: 1400,
