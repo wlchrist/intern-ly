@@ -13,7 +13,7 @@ import logging
 from dotenv import load_dotenv
 
 from schemas import ResumeJSON, JobDescription
-from services import parse_resume, rewrite_resume, build_pdf
+from services import parse_resume, rewrite_resume, build_tex
 
 load_dotenv()
 
@@ -146,15 +146,15 @@ async def rewrite_endpoint(request: Request, data: RewriteRequest):
 @app.post("/api/build")
 @limiter.limit("20/minute")
 async def build_endpoint(request: Request, data: BuildRequest):
-    """Build PDF from resume JSON"""
+    """Build LaTeX from resume JSON"""
     try:
-        logger.info("Building PDF...")
-        pdf_bytes = await build_pdf(data.resume)
+        logger.info("Building LaTeX...")
+        tex_content = await build_tex(data.resume)
         
         return StreamingResponse(
-            BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=resume.pdf"},
+            BytesIO(tex_content.encode("utf-8")),
+            media_type="text/plain",
+            headers={"Content-Disposition": "attachment; filename=resume.tex"},
         )
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -194,15 +194,15 @@ async def tailor_endpoint(request: Request, data: TailorRequest):
         )
         rewritten = await rewrite_resume(resume, job_desc, call_anthropic)
         
-        # Step 3: Build PDF
-        logger.info("Step 3/3: Building PDF...")
-        pdf_bytes = await build_pdf(rewritten)
+        # Step 3: Build LaTeX
+        logger.info("Step 3/3: Building LaTeX...")
+        tex_content = await build_tex(rewritten)
         
         logger.info("Tailor pipeline complete!")
         return StreamingResponse(
-            BytesIO(pdf_bytes),
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=tailored_resume.pdf"},
+            BytesIO(tex_content.encode("utf-8")),
+            media_type="text/plain",
+            headers={"Content-Disposition": "attachment; filename=tailored_resume.tex"},
         )
     
     except ValueError as e:

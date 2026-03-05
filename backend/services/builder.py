@@ -1,8 +1,4 @@
-"""Builder service: Convert resume JSON to LaTeX and compile to PDF"""
-import subprocess
-import tempfile
-from pathlib import Path
-from io import BytesIO
+"""Builder service: Convert resume JSON to LaTeX"""
 from schemas import ResumeJSON
 
 
@@ -226,42 +222,10 @@ def build_resume_latex(resume: ResumeJSON) -> str:
     return latex
 
 
-async def build_pdf(resume: ResumeJSON) -> bytes:
+async def build_tex(resume: ResumeJSON) -> str:
     """
-    Build resume PDF from JSON.
-    Generates LaTeX, compiles with pdflatex, and returns PDF bytes.
+    Build resume LaTeX source from JSON.
+    Returns the LaTeX source code as a string.
     """
-    
     latex_content = build_resume_latex(resume)
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmppath = Path(tmpdir)
-        tex_file = tmppath / "resume.tex"
-        pdf_file = tmppath / "resume.pdf"
-        
-        # Write LaTeX file
-        tex_file.write_text(latex_content, encoding="utf-8")
-        
-        # Try to compile with pdflatex
-        try:
-            result = subprocess.run(
-                ["pdflatex", "-interaction=nonstopmode", "-output-directory", str(tmppath), str(tex_file)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            
-            if result.returncode != 0 or not pdf_file.exists():
-                raise RuntimeError(f"pdflatex compilation failed: {result.stderr}")
-            
-            # Read and return PDF bytes
-            pdf_bytes = pdf_file.read_bytes()
-            return pdf_bytes
-            
-        except FileNotFoundError:
-            raise RuntimeError(
-                "pdflatex not found. LaTeX tools must be installed on the server. "
-                "Please install texlive or equivalent."
-            )
-        except Exception as e:
-            raise RuntimeError(f"PDF compilation error: {e}")
+    return latex_content
