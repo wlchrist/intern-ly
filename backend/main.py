@@ -61,9 +61,13 @@ class BuildRequest(BaseModel):
 
 class TailorRequest(BaseModel):
     """Combined request for full tailoring pipeline"""
-    resume_content: str
+    # Accept both old and new field names for backwards compatibility
+    resume_content: str | None = None
+    master_resume: str | None = None
+    master_latex: str | None = None
     job_description: str
     temperature: float = 0.2
+    max_tokens: int = 1400  # For backwards compatibility, though not used
 
 
 # Utility function
@@ -171,9 +175,14 @@ async def tailor_endpoint(request: Request, data: TailorRequest):
     try:
         logger.info("Starting full tailor pipeline...")
         
+        # Extract resume content from whichever field is provided (backwards compatibility)
+        resume_text = data.resume_content or data.master_resume or data.master_latex
+        if not resume_text:
+            raise ValueError("No resume content provided")
+        
         # Step 1: Parse resume
         logger.info("Step 1/3: Parsing resume...")
-        resume = await parse_resume(data.resume_content, call_anthropic)
+        resume = await parse_resume(resume_text, call_anthropic)
         
         # Step 2: Extract job keywords and rewrite
         logger.info("Step 2/3: Rewriting resume...")
